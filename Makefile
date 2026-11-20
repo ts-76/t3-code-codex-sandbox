@@ -79,9 +79,11 @@ setup:
 	fi; \
 	openai=$$(sbx secret ls --global --service openai --quiet && \
 	  sbx secret ls --sandbox "$$NAME" --service openai --quiet); \
+	codex_auth='existing Docker Sandboxes credential'; \
 	if [ -z "$$openai" ]; then \
 	  printf '\nSign in to ChatGPT for Docker Sandboxes.\n'; \
 	  sbx secret set openai --oauth; \
+	  codex_auth='ChatGPT sign-in completed'; \
 	fi; \
 	if ! docker version --format '{{.Server.Version}}' >/dev/null 2>&1; then \
 	  if [ "$$(uname -s)" != Darwin ]; then \
@@ -113,4 +115,21 @@ setup:
 	    exit 1; \
 	  fi; \
 	fi; \
-	printf '\nT3 Code SSH host: %s.sbx\nWorkspace: %s\n' "$$NAME" "$$workspace"
+	printf '\nSandbox: %s\nT3 Code SSH host: %s.sbx\nWorkspace: %s\n' "$$NAME" "$$NAME" "$$workspace"; \
+	printf 'Codex authentication: %s\n' "$$codex_auth"; \
+	if [ "$$GITHUB_AUTH" = 1 ]; then \
+	  printf '%s\n' 'GitHub authentication: configured'; \
+	else \
+	  printf '%s\n' 'GitHub authentication: skipped'; \
+	fi; \
+	printf '%s\n' '' 'Next in T3 Code' \
+	  '1. Settings -> Environments -> Add environment -> SSH. Enter the SSH host above.' \
+	  '2. Open Add project and select the SSH environment you just added.'; \
+	if [ -n "$$REPO" ] || [ -n "$$WORKSPACE" ]; then \
+	  printf '%s\n' '3. Choose Local folder and open the workspace above.'; \
+	elif [ "$$GITHUB_AUTH" = 1 ]; then \
+	  printf '%s\n' '3. Choose GitHub repository and select the repository to clone.' \
+	    '   If Setup Required appears, select your SSH environment in Settings -> Source control & issues and click Rescan.'; \
+	else \
+	  printf '%s\n' '3. Choose Git URL and enter a public repository clone URL.'; \
+	fi

@@ -62,7 +62,7 @@ make setup WORKSPACE="/absolute/path/to/project"
 
 ### 作成時のオプション
 
-`make setup` は macOS で必要に応じて Docker Desktop を起動し、Buildx ビルダーと SSH 接続を準備してからサンドボックスを作成します。完了時に SSH ホスト名と作業フォルダを表示します。
+`make setup` は macOS で必要に応じて Docker Desktop を起動し、Buildx ビルダーと SSH 接続を準備してからサンドボックスを作成します。完了時にサンドボックス名、SSH ホスト名、作業フォルダ、Codex と GitHub の認証状況、T3 Code で次に選ぶ項目を表示します。`uvx` で実行した場合も同じ案内が表示されます。
 
 既定のサンドボックス名は `t3-code-codex` です。作成済みの環境にはそのまま接続できます。別のリポジトリや T3 Code バージョンで作成する場合は、新しい `NAME` を指定してください。
 
