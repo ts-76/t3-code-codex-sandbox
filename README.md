@@ -7,15 +7,9 @@ Docker Sandboxes の Codex ワークロードに T3 Code サーバーを追加�
 ## 準備
 
 - Docker Sandboxes（`sbx` v0.51.0 で確認）
-- ローカルビルド用の Docker Engine と Buildx。macOS では Docker Desktop を起動してください。
+- ローカルビルド用の Docker Engine と Buildx。macOS では Docker Desktop を使用します。
+- `make`（macOS 標準の GNU Make 3.81 で確認）
 - T3 Code デスクトップアプリ
-
-Docker Sandboxes にサインインし、SSH 接続を有効にします。Codex を ChatGPT アカウントで使う場合は、必要に応じて Mac 側の `sbx secret set openai --oauth` で認証します。[Docker の Codex 認証ガイド](https://docs.docker.com/ai/sandboxes/agents/codex/#authentication)
-
-```sh
-sbx login
-sbx setup ssh
-```
 
 ## サンドボックスを作成する
 
@@ -24,29 +18,29 @@ git clone https://github.com/ts-76/t3-code-codex-sandbox.git
 cd t3-code-codex-sandbox
 ```
 
-ローカルビルドに使う `docker-container` ドライバーのビルダーを用意します。同じ名前で作成済みなら再利用できます。
+初回は `sbx login` で Docker Sandboxes にサインインします。Codex を ChatGPT アカウントで使う場合は `make auth` で認証してください。保存済みの認証情報は再利用できます。[Docker の Codex 認証ガイド](https://docs.docker.com/ai/sandboxes/agents/codex/#authentication)
+
+共有したい作業フォルダを `WORKSPACE` に指定します。
 
 ```sh
-docker buildx inspect sbx-t3-kit-builder >/dev/null 2>&1 ||
-  docker buildx create --name sbx-t3-kit-builder --driver docker-container
+make setup WORKSPACE="/absolute/path/to/project"
 ```
 
-`/absolute/path/to/project` を共有したい作業フォルダの絶対パスに置き換えます。
+`make setup` は macOS で必要に応じて Docker Desktop を起動し、Buildx ビルダーと SSH 接続を準備してからサンドボックスを作成します。完了時に SSH ホスト名と作業フォルダを表示します。
+
+既定のサンドボックス名は `t3-code-codex` です。作成済みの環境にはそのまま接続できます。別の作業フォルダや T3 Code バージョンで作成する場合は、新しい `NAME` を指定してください。
 
 ```sh
-BUILDX_BUILDER=sbx-t3-kit-builder sbx create \
-  --name t3-code-codex \
-  --kit ./t3code-ssh \
-  codex /absolute/path/to/project
+make setup WORKSPACE="/absolute/path/to/project" NAME=t3-code-codex-project T3_VERSION=0.1.11
 ```
 
-デスクトップアプリのバージョンが `0.1.11` と異なる場合は、作成時に `--kit-arg t3code-ssh.version=バージョン番号` を指定します。デスクトップアプリは、バージョンが一致する T3 サーバーを再利用します。[T3 Code の SSH 起動処理](https://github.com/pingdotgg/t3code/blob/v0.1.11/packages/ssh/src/tunnel.ts#L2995-L3026)
+`T3_VERSION` は使っているデスクトップアプリのバージョンに合わせます。省略時はキットに定義したバージョンを使います。デスクトップアプリは、バージョンが一致する T3 サーバーを再利用します。[T3 Code の SSH 起動処理](https://github.com/pingdotgg/t3code/blob/v0.1.11/packages/ssh/src/tunnel.ts#L2995-L3026)
 
 ## T3 Code から接続する
 
 1. **Settings → Environments → Add environment → SSH** を開きます。
-2. ホスト名に `t3-code-codex.sbx` を入力して接続します。
-3. プロジェクト追加時に `t3-code-codex` を選び、作成時に指定した作業フォルダを開きます。
+2. `make setup` が表示したホスト名を入力して接続します。既定は `t3-code-codex.sbx` です。
+3. プロジェクト追加時にその環境を選び、作成時に指定した作業フォルダを開きます。
 
 [Docker の T3 Code 接続ガイド](https://docs.docker.com/ai/sandboxes/integrations/t3-code/)
 
