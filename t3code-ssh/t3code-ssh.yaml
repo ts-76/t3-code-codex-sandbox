@@ -1,0 +1,49 @@
+# syntax=docker/sandbox-kit:3
+schemaVersion: "3"
+kind: mixin
+displayName: T3 Code SSH
+description: Installs the native T3 Code server used by the desktop app over SSH.
+version: "${{ kit.args.version }}"
+
+args:
+  version:
+    default: "0.1.11"
+    pattern: '^[0-9]+\.[0-9]+\.[0-9]+$'
+    description: T3 Code desktop version to match.
+    buildArg: T3_VERSION
+  telemetry:
+    default: "false"
+    enum: ["true", "false"]
+    env: T3CODE_TELEMETRY_ENABLED
+
+provides: ["t3@${{ kit.args.version }}"]
+
+build: |
+  FROM debian:trixie-slim AS release
+  ARG TARGETARCH
+  ARG T3_VERSION
+  RUN apt-get update \
+      && apt-get install -y --no-install-recommends ca-certificates curl \
+      && rm -rf /var/lib/apt/lists/*
+  RUN set -eu; \
+      case "$TARGETARCH" in \
+        amd64) platform=linux-x64 ;; \
+        arm64) platform=linux-arm64 ;; \
+        *) printf 'Unsupported architecture: %s\n' "$TARGETARCH" >&2; exit 1 ;; \
+      esac; \
+      archive="t3-$T3_VERSION-$platform.tar.gz"; \
+      release_url="https://github.com/pingdotgg/t3code/releases/download/v$T3_VERSION"; \
+      staging="$(mktemp -d)"; \
+      cd "$staging"; \
+      curl -fsSL --retry 3 --connect-timeout 30 "$release_url/SHA256SUMS" -o SHA256SUMS; \
+      curl -fsSL --retry 3 --connect-timeout 30 "$release_url/$archive" -o "$archive"; \
+      awk -v name="$archive" '$2 == name || $2 == "*" name' SHA256SUMS > checksum; \
+      sha256sum --check checksum; \
+      mkdir -p /out/opt/t3-code /out/usr/local/bin; \
+      tar -xzf "$archive" -C /out/opt/t3-code --strip-components=1; \
+      test "$(/out/opt/t3-code/t3 --version)" = "t3 v$T3_VERSION"; \
+      ln -s /opt/t3-code/t3 /out/usr/local/bin/t3; \
+      rm -rf "$staging"
+
+  FROM scratch
+  COPY --from=release /out/ /
