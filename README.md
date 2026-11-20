@@ -18,7 +18,16 @@ git clone https://github.com/ts-76/t3-code-codex-sandbox.git
 cd t3-code-codex-sandbox
 ```
 
-初回は `sbx login` で Docker Sandboxes にサインインします。Codex を ChatGPT アカウントで使う場合は `make auth` で認証してください。保存済みの認証情報は再利用できます。[Docker の Codex 認証ガイド](https://docs.docker.com/ai/sandboxes/agents/codex/#authentication)
+初回は `sbx login` で Docker Sandboxes にサインインします。その後は、ターミナルで `make setup` を実行すると、作成と認証をまとめて進められます。
+
+```sh
+make setup
+```
+
+1. サンドボックス作成前に、Mac 側に保存済みの OpenAI 認証情報を確認します。必要な場合はブラウザで ChatGPT にログインします。[Docker の Codex 認証ガイド](https://docs.docker.com/ai/sandboxes/agents/codex/#authentication)
+2. 作成後、サンドボックス内の GitHub CLI で GitHub 認証を確認し、HTTPS の Git 認証を設定します。ログインが必要な場合は、ターミナルに表示される URL を開いてコードを入力します。[GitHub CLI の認証ガイド](https://cli.github.com/manual/gh_auth_login)
+
+認証が済んだ環境では、T3 Code に SSH 接続を追加した後、プロジェクト追加画面の **GitHub repository** からリポジトリを選べます。必要に応じて、サンドボックスを選択した状態で **Settings → Source control & issues → Rescan** を実行してください。[T3 Code の GitHub 認証ガイド](https://github.com/pingdotgg/t3code/blob/v0.1.11/docs/user/source-control.md#github)
 
 ### GitHub からサンドボックス内へクローンする
 
@@ -30,7 +39,7 @@ make setup REPO=docker/welcome-to-docker
 
 `make setup` は Mac のプロジェクトフォルダを共有せずにサンドボックスを作成し、リポジトリを `/home/agent/workspace/<リポジトリ名>` にクローンします。作業ファイルはサンドボックス内に保存されます。残したい変更は、サンドボックスを削除する前に GitHub へ push するかコピーしてください。[Docker のマウントなしワークスペース](https://docs.docker.com/ai/sandboxes/workflows/git/#mountless-sandbox)
 
-先に空のサンドボックスを作る場合は `make setup` だけを実行します。接続後、T3 Code のプロジェクト追加画面で **Git URL** からクローンできます。非公開リポジトリを使う場合は、サンドボックスでリポジトリにアクセスできる認証を設定してからクローンしてください。
+非公開リポジトリを使う場合は、そのリポジトリにアクセスできる GitHub アカウントで認証してください。
 
 ### Mac の作業フォルダを共有する
 
@@ -51,6 +60,8 @@ make setup REPO=owner/repo NAME=t3-code-codex-project T3_VERSION=0.1.11
 ```
 
 `T3_VERSION` は使っているデスクトップアプリのバージョンに合わせます。省略時はキットに定義したバージョンを使います。デスクトップアプリは、バージョンが一致する T3 サーバーを再利用します。[T3 Code の SSH 起動処理](https://github.com/pingdotgg/t3code/blob/v0.1.11/packages/ssh/src/tunnel.ts#L2995-L3026)
+
+GitHub 認証を後から行う場合は `make setup GITHUB_AUTH=0` を使います。認証の再開は `make github-auth NAME=t3-code-codex` で行えます。ChatGPT の再認証には `make auth` を使います。
 
 ## T3 Code から接続する
 
