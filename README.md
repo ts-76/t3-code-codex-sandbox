@@ -13,16 +13,27 @@ Docker Sandboxes の Codex ワークロードに T3 Code サーバーを追加�
 
 ## サンドボックスを作成する
 
+初回は `sbx login` で Docker Sandboxes にサインインします。
+
+### GitHub から直接実行する
+
+[`uvx`](https://docs.astral.sh/uv/guides/tools/) が使える場合は、任意のフォルダから実行できます。
+
+```sh
+uvx --from git+https://github.com/ts-76/t3-code-codex-sandbox.git t3-code-codex-setup
+```
+
+空のサンドボックスを作成し、必要に応じて Codex と GitHub の認証を案内します。作成時にリポジトリまでクローンする場合は `--repo owner/repo`、別名で作る場合は `--name` を付けます。GitHub 認証を途中で中断した場合は、同じコマンドの末尾に `github-auth` を付けて再開します。オプション一覧は `--help` で確認できます。
+
+### 手元にクローンして実行する
+
 ```sh
 git clone https://github.com/ts-76/t3-code-codex-sandbox.git
 cd t3-code-codex-sandbox
-```
-
-初回は `sbx login` で Docker Sandboxes にサインインします。その後は、ターミナルで `make setup` を実行すると、作成と認証をまとめて進められます。
-
-```sh
 make setup
 ```
+
+### セットアップ中の認証
 
 1. サンドボックス作成前に、Mac 側に保存済みの OpenAI 認証情報を確認します。必要な場合はブラウザで ChatGPT にログインします。[Docker の Codex 認証ガイド](https://docs.docker.com/ai/sandboxes/agents/codex/#authentication)
 2. 作成後、サンドボックス内の GitHub CLI で GitHub 認証を確認し、HTTPS の Git 認証を設定します。ログインが必要な場合は、ターミナルに表示される URL を開いてコードを入力します。[GitHub CLI の認証ガイド](https://cli.github.com/manual/gh_auth_login)
@@ -66,8 +77,8 @@ GitHub 認証を後から行う場合は `make setup GITHUB_AUTH=0` を使いま
 ## T3 Code から接続する
 
 1. **Settings → Environments → Add environment → SSH** を開きます。
-2. `make setup` が表示したホスト名を入力して接続します。既定は `t3-code-codex.sbx` です。
-3. プロジェクト追加時にその環境を選び、`make setup` が表示した作業フォルダを開きます。
+2. セットアップが表示したホスト名を入力して接続します。既定は `t3-code-codex.sbx` です。
+3. プロジェクト追加時にその環境を選び、セットアップが表示した作業フォルダを開くか、**GitHub repository** から作業するリポジトリを選びます。
 
 [Docker の T3 Code 接続ガイド](https://docs.docker.com/ai/sandboxes/integrations/t3-code/)
 

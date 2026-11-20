@@ -13,7 +13,7 @@ define configure_github
 if ! sbx exec "$$NAME" -- gh auth status --hostname github.com >/dev/null 2>&1; then \
   printf '\nSign in to GitHub inside %s. Follow the browser instructions.\n' "$$NAME"; \
   if ! sbx exec "$$NAME" -- env GH_PROMPT_DISABLED=1 gh auth login --hostname github.com --git-protocol https --web; then \
-    printf 'GitHub sign-in did not complete. Run make github-auth NAME=%s to retry.\n' "$$NAME" >&2; \
+    printf 'GitHub sign-in did not complete for %s. Retry with github-auth.\n' "$$NAME" >&2; \
     exit 1; \
   fi; \
 fi; \

@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "t3-code-codex-sandbox"
+version = "0.1.0"
+description = "Set up a Docker Sandbox for Codex and T3 Code over SSH."
+readme = "README.md"
+requires-python = ">=3.10"
+
+[project.scripts]
+t3-code-codex-setup = "t3_code_codex:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/t3_code_codex"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"Makefile" = "t3_code_codex/Makefile"
+"t3code-ssh/t3code-ssh.yaml" = "t3_code_codex/t3code-ssh/t3code-ssh.yaml"
