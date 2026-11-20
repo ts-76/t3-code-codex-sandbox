@@ -3,11 +3,14 @@
 export NAME ?= t3-code-codex
 export REPO ?=
 export WORKSPACE ?=
+export DOTFILES ?=
+export DOTFILES_SCRIPTS ?= 0
+export DOTFILES_NIX ?= 0
 export T3_VERSION ?=
 export BUILDER ?= sbx-t3-kit-builder
 export GITHUB_AUTH ?= 1
 
-.PHONY: help setup auth github-auth
+.PHONY: help setup auth github-auth dotfiles
 
 define configure_github
 if ! sbx exec "$$NAME" -- gh auth status --hostname github.com >/dev/null 2>&1; then \
@@ -20,13 +23,25 @@ fi; \
 sbx exec "$$NAME" -- gh auth setup-git --hostname github.com
 endef
 
+define configure_dotfiles
+( \
+  if [ -t 0 ] && [ -t 1 ]; then set -- -it; else set -- -i; fi; \
+  script=$$(cat ./setup-dotfiles.sh) && \
+    sbx exec "$$@" "$$NAME" -- sh -c "$$script" sh "$$DOTFILES" "$$DOTFILES_SCRIPTS" "$$DOTFILES_NIX"; \
+)
+endef
+
 help:
 	@printf '%s\n' \
 	  'make setup REPO=owner/repo           Clone GitHub into the sandbox' \
 	  'make setup                          Create an empty sandbox' \
 	  'make setup WORKSPACE=/path/to/project  Share a local directory' \
+	  'make setup DOTFILES=self            Install dotfiles for the signed-in GitHub account' \
+	  'make setup DOTFILES=https://…       Install dotfiles from an HTTPS clone URL' \
 	  'make auth                           Sign in to ChatGPT for Docker Sandboxes' \
 	  'make github-auth [NAME=t3-code-codex]  Sign in to GitHub in an existing sandbox' \
+	  'make dotfiles DOTFILES=self          Install or retry dotfiles in an existing sandbox' \
+	  'Dotfiles options: DOTFILES_NIX=1 (install Nix), DOTFILES_SCRIPTS=1 (run chezmoi scripts)' \
 	  'Setup options: NAME=t3-code-codex T3_VERSION=0.1.11 GITHUB_AUTH=0 (skip GitHub sign-in)'
 
 auth:
@@ -34,6 +49,11 @@ auth:
 
 github-auth:
 	@set -eu; $(configure_github)
+
+dotfiles:
+	@set -eu; \
+	sh ./setup-dotfiles.sh --validate "$$DOTFILES" "$$DOTFILES_SCRIPTS" "$$DOTFILES_NIX"; \
+	$(configure_dotfiles)
 
 setup:
 	@set -eu; \
@@ -49,6 +69,11 @@ setup:
 	  0|1) ;; \
 	  *) printf '%s\n' 'Set GITHUB_AUTH to 0 or 1.' >&2; exit 1 ;; \
 	esac; \
+	if [ -n "$$DOTFILES" ]; then \
+	  sh ./setup-dotfiles.sh --validate "$$DOTFILES" "$$DOTFILES_SCRIPTS" "$$DOTFILES_NIX"; \
+	elif [ "$$DOTFILES_SCRIPTS:$$DOTFILES_NIX" != 0:0 ]; then \
+	  printf '%s\n' 'Set DOTFILES when using DOTFILES_SCRIPTS or DOTFILES_NIX.' >&2; exit 1; \
+	fi; \
 	workspace=/home/agent/workspace; \
 	set --; \
 	if [ -n "$$WORKSPACE" ]; then \
@@ -115,12 +140,21 @@ setup:
 	    exit 1; \
 	  fi; \
 	fi; \
+	if [ -n "$$DOTFILES" ]; then \
+	  if ! $(configure_dotfiles); then \
+	    printf 'Sandbox %s.sbx is ready. Retry using the dotfiles command with the same name and source.\n' "$$NAME" >&2; \
+	    exit 1; \
+	  fi; \
+	fi; \
 	printf '\nSandbox: %s\nT3 Code SSH host: %s.sbx\nWorkspace: %s\n' "$$NAME" "$$NAME" "$$workspace"; \
 	printf 'Codex authentication: %s\n' "$$codex_auth"; \
 	if [ "$$GITHUB_AUTH" = 1 ]; then \
 	  printf '%s\n' 'GitHub authentication: configured'; \
 	else \
 	  printf '%s\n' 'GitHub authentication: skipped'; \
+	fi; \
+	if [ -n "$$DOTFILES" ]; then \
+	  printf '%s\n' 'Dotfiles: installed in ~/dotfiles'; \
 	fi; \
 	printf '%s\n' '' 'Next in T3 Code' \
 	  '1. Settings -> Environments -> Add environment -> SSH. Enter the SSH host above.' \

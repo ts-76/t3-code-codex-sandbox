@@ -74,6 +74,33 @@ make setup REPO=owner/repo NAME=t3-code-codex-project T3_VERSION=0.1.11
 
 GitHub 認証を後から行う場合は `make setup GITHUB_AUTH=0` を使います。認証の再開は `make github-auth NAME=t3-code-codex` で行えます。ChatGPT の再認証には `make auth` を使います。
 
+### dotfiles を入れる
+
+GitHub 認証済みのアカウントの `<ユーザー名>/dotfiles` を使う場合は `DOTFILES=self` を指定します。別のリポジトリを使う場合は HTTPS のクローン URL を指定します。
+
+```sh
+make setup DOTFILES=self
+make setup DOTFILES=https://github.com/owner/dotfiles.git
+```
+
+`uvx` では `--dotfiles self` または `--dotfiles <HTTPS のクローン URL>` を付けます。
+
+```sh
+uvx --from git+https://github.com/ts-76/t3-code-codex-sandbox.git t3-code-codex-setup --dotfiles self
+```
+
+GitHub 認証と、指定があればプロジェクトのクローンを終えたあと、サンドボックスの `~/dotfiles` に dotfiles をクローンします。リポジトリのルートに `install.sh` がある場合は Bash で実行します。chezmoi 形式の場合は、必要に応じて chezmoi を導入して設定ファイルを適用します。テンプレートが名前やメールアドレスを求める場合は、ターミナルで入力します。
+
+chezmoi テンプレートが `nix` を使う場合は、`DOTFILES_NIX=1` または `--dotfiles-nix` を追加します。サンドボックスに Nix がなければ Debian の `nix-bin` を導入し、適用中は `nix-command` と `flakes` を有効にします。
+
+```sh
+make setup DOTFILES=https://github.com/ts-76/dotfiles.git DOTFILES_NIX=1
+```
+
+chezmoi のスクリプトも実行する場合は `DOTFILES_SCRIPTS=1` または `--run-dotfiles-scripts` を追加します。Devbox のパッケージを導入するスクリプトを実行するには、サンドボックス内の Devbox と Nix、依存パッケージの配布先へのアクセスが必要です。
+
+既存のサンドボックスに適用する場合や、dotfiles だけ再試行する場合は `make dotfiles NAME=t3-code-codex DOTFILES=self` を実行します。`uvx` の場合はコマンドの末尾に `dotfiles --name t3-code-codex --dotfiles self` を付けます。
+
 ## T3 Code から接続する
 
 1. **Settings → Environments → Add environment → SSH** を開きます。
