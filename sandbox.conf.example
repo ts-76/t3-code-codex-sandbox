@@ -10,3 +10,6 @@ NAME=t3-code-codex
 # DOTFILES_NIX=1
 # DOTFILES_SCRIPTS=0
 # NETWORK_ALLOW=packages.example.com:443,cache.example.com:443
+# MCP_HOSTNAME=mcp.example.com
+# MCP_LOCAL_PORT=13773
+# MCP_ACCESS=read-only

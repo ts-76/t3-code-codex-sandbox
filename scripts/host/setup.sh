@@ -141,6 +141,11 @@ case "$action" in
     github-auth) configure_github; exit ;;
     status) show_status; exit ;;
     network) configure_network; exit ;;
+    mcp-setup|mcp-pair|mcp-stop)
+        python=${T3_SETUP_PYTHON:-python3}
+        require_command "$python"
+        exec "$python" ./scripts/host/mcp.py "$action" "$NAME" "$MCP_HOSTNAME" "$MCP_LOCAL_PORT" "$MCP_ACCESS"
+        ;;
     dotfiles|dotfiles-update)
         mode=apply
         [ "$action" != dotfiles-update ] || mode=update

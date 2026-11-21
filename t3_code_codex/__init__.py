@@ -11,9 +11,12 @@ def main() -> int:
     parser.add_argument(
         "action",
         nargs="?",
-        choices=("setup", "resume", "status", "auth", "github-auth", "dotfiles", "dotfiles-update", "network"),
+        choices=(
+            "setup", "resume", "status", "auth", "github-auth", "dotfiles", "dotfiles-update", "network",
+            "mcp-setup", "mcp-pair", "mcp-stop",
+        ),
         default="setup",
-        help="Create, resume or inspect a sandbox, or manage its authentication, dotfiles and network access.",
+        help="Create or manage a sandbox, including optional external MCP access.",
     )
     parser.add_argument("--name", help="Sandbox name (default: t3-code-codex).")
     parser.add_argument("--config", type=Path, help="Settings file (default: ./sandbox.local.conf if present).")
@@ -25,6 +28,13 @@ def main() -> int:
     parser.add_argument("--details", action="store_true", help="With status, check inside the sandbox and start it if stopped.")
     parser.add_argument("--allow-network", help="With network, override the comma-separated hostname list.")
     parser.add_argument("--apply", action="store_true", help="With network, add the listed rules to the selected sandbox.")
+    parser.add_argument("--mcp-hostname", help="With mcp-setup, hostname in a Cloudflare-managed DNS zone.")
+    parser.add_argument("--mcp-local-port", help="With mcp-setup, Mac SSH forward port (default: 13773).")
+    parser.add_argument(
+        "--mcp-access",
+        choices=("read-only", "approval-required", "auto-accept-edits", "auto", "full-access"),
+        help="With mcp-pair, scope of the sign-in code (default: read-only).",
+    )
     parser.add_argument("--dotfiles", help="Install dotfiles from self (signed-in GitHub account) or an HTTPS clone URL.")
     parser.add_argument(
         "--run-dotfiles-scripts",
@@ -46,6 +56,10 @@ def main() -> int:
         parser.error("--details requires status.")
     if args.action != "network" and (args.allow_network is not None or args.apply):
         parser.error("--allow-network and --apply require network.")
+    if args.action != "mcp-setup" and (args.mcp_hostname is not None or args.mcp_local_port is not None):
+        parser.error("--mcp-hostname and --mcp-local-port require mcp-setup.")
+    if args.action != "mcp-pair" and args.mcp_access is not None:
+        parser.error("--mcp-access requires mcp-pair.")
     if (args.dotfiles is not None or args.run_dotfiles_scripts or args.dotfiles_nix) and args.action not in (
         "setup", "resume", "dotfiles", "dotfiles-update",
     ):
@@ -65,6 +79,9 @@ def main() -> int:
         "DOTFILES_NIX": "1" if args.dotfiles_nix else None,
         "NETWORK_ALLOW": args.allow_network,
         "APPLY": "1" if args.apply else None,
+        "MCP_HOSTNAME": args.mcp_hostname,
+        "MCP_LOCAL_PORT": args.mcp_local_port,
+        "MCP_ACCESS": args.mcp_access,
     }
     for name, value in values.items():
         if value is not None:
@@ -75,7 +92,9 @@ def main() -> int:
     try:
         os.execvpe(
             "make", make_arguments,
-            os.environ | {"T3_SETUP_FRONTEND": "uvx", "T3_SETUP_CWD": os.getcwd()},
+            os.environ | {
+                "T3_SETUP_FRONTEND": "uvx", "T3_SETUP_CWD": os.getcwd(), "T3_SETUP_PYTHON": sys.executable,
+            },
         )
     except FileNotFoundError:
         print("Install GNU Make before running t3-code-codex-setup.", file=sys.stderr)

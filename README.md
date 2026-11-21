@@ -74,6 +74,41 @@ uvx --from git+https://github.com/ts-76/t3-code-codex-sandbox.git t3-code-codex-
 
 **GitHub repository** に **Setup Required** が出る場合は、**Settings → Source control & issues** で SSH 環境を選び **Rescan** を実行します。[Docker の接続ガイド](https://docs.docker.com/ai/sandboxes/integrations/t3-code/)・[T3 Code の GitHub 認証ガイド](https://github.com/pingdotgg/t3code/blob/v0.1.11/docs/user/source-control.md#github)
 
+## 外部エージェントからサンドボックスに接続する
+
+外部 MCP クライアントから接続する場合は、Mac に `cloudflared` を入れ、初回に `cloudflared tunnel login` を実行します。Cloudflare で DNS を管理しているドメインから、MCP 専用の空いているホスト名を選びます。Mac のログインセッション内で、作成済みのサンドボックス名とホスト名を指定します。[Cloudflare の設定ガイド](https://developers.cloudflare.com/tunnel/features/locally-managed-tunnels/create-local-tunnel/)
+
+Cloudflare の Single Redirects で、MCP 専用のホスト名への HTTP リクエストを同じホストの HTTPS へ転送します。パスとクエリ文字列を保持し、外部クライアントには最初から HTTPS の URL を登録します。直接接続では T3 Code 自身が OAuth を提供するため、このホストで Cloudflare Access の Managed OAuth を有効にすると認証先が変わります。[Cloudflare のリダイレクト設定](https://developers.cloudflare.com/rules/url-forwarding/single-redirects/create-dashboard/)・[Cloudflare の MCP 認証ガイド](https://developers.cloudflare.com/cloudflare-one/access-controls/ai-controls/secure-mcp-servers/)
+
+```sh
+make mcp-setup NAME=t3-code-codex MCP_HOSTNAME=mcp.example.com
+make status NAME=t3-code-codex DETAILS=1
+```
+
+Make を使う場合は Python 3.9 以降も必要です。`uvx` でも同じ設定を実行できます。
+
+```sh
+uvx --from git+https://github.com/ts-76/t3-code-codex-sandbox.git \
+  t3-code-codex-setup mcp-setup --name t3-code-codex --mcp-hostname mcp.example.com
+```
+
+`mcp-setup` は指定したサンドボックスに SSH で接続し、Mac のループバックポートから T3 Code に転送します。Cloudflare Tunnel と DNS レコードを作成し、公開 URL が同じサンドボックスを指していることと OAuth の応答を確認します。T3 Code の MCP と承認画面に必要な経路だけをトンネルに通します。SSH 転送とトンネルは Mac のログイン中に LaunchAgent で動作します。サンドボックス内の T3 が止まると、SSH セッションがサンドボックス内で T3 を起動します。
+
+セットアップに表示された `https://mcp.example.com/mcp` を外部クライアントに OAuth 接続として追加し、サインインを開始します。同じサンドボックスの承認コードを発行し、ブラウザの承認画面に入力します。有効期限は5分です。[T3 Code の外部エージェント接続ガイド](https://github.com/pingdotgg/t3code/blob/v0.1.11/docs/user/outside-agents.md#approve-a-sign-in)
+
+```sh
+make mcp-pair NAME=t3-code-codex
+
+uvx --from git+https://github.com/ts-76/t3-code-codex-sandbox.git \
+  t3-code-codex-setup mcp-pair --name t3-code-codex
+```
+
+既定は読み取り専用です。外部クライアントからこのサンドボックスでスレッドを作成し、承認なしで実行させる場合は、`make mcp-pair NAME=t3-code-codex MCP_ACCESS=full-access`（`uvx` では `--mcp-access full-access`）でコードを発行し、承認画面でも **Full access** を選びます。接続先のサンドボックスがホストのフォルダを共有している場合は、そのフォルダもエージェントの作業範囲に入ります。接続済みクライアントは T3 Code の対象環境の **Settings → Sharing & access** で取り消せます。
+
+- `sandbox.local.conf` に `MCP_HOSTNAME=mcp.example.com` を書くと、実行時にホスト名を省略できます。既定の Mac 側ポート `13773` が使用中の場合や、複数のサンドボックスをつなぐ場合は `MCP_LOCAL_PORT`（`--mcp-local-port`）を個別に指定します。
+- DNS や TLS の反映待ちで止まったら、時間を置いて同じ `mcp-setup` を実行します。作成したトンネルを再利用します。生成した設定とログは Mac の `~/Library/Application Support/t3-code-codex-sandbox/mcp/<サンドボックス名>/` にあります。
+- 公開を止めるときは `make mcp-stop NAME=t3-code-codex`（`uvx` では `mcp-stop --name t3-code-codex`）を実行します。Mac 側の転送とトンネルが停止し、Cloudflare 上の DNS レコードとトンネルは再利用できます。ホスト名やポートを切り替える場合は、停止後に新しい値で `mcp-setup` を実行します。
+
 ## 状態を確認する・途中から再開する
 
 ```sh

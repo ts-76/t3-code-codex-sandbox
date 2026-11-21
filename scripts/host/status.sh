@@ -15,5 +15,11 @@ show_status() {
     show_connection
     printf 'State: %s\nCodex credential mode: %s\nWorking directory: %s\n' \
         "$(inspection_field State)" "$(inspection_field 'Auth mode')" "$(inspection_field 'Working directory')"
-    [ "$DETAILS" = 0 ] || run_sandbox_script status
+    if [ "$DETAILS" = 1 ]; then
+        run_sandbox_script status || return
+        case "$NAME" in *[!A-Za-z0-9_-]*) return 0 ;; esac
+        if [ -f "$HOME/Library/Application Support/t3-code-codex-sandbox/mcp/$NAME/setup.json" ]; then
+            "${T3_SETUP_PYTHON:-python3}" ./scripts/host/mcp.py mcp-status "$NAME"
+        fi
+    fi
 }
