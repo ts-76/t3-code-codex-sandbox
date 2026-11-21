@@ -7,7 +7,8 @@ validate_source() {
         *) printf '%s\n' 'Set DOTFILES_SCRIPTS and DOTFILES_NIX to 0 or 1.' >&2; exit 1 ;;
     esac
     case "$1" in
-        self) return ;;
+        '') [ "$4" != update ] || return 0 ;;
+        self) return 0 ;;
         https://*)
             address=${1#https://}
             host=${address%%/*}
@@ -16,7 +17,7 @@ validate_source() {
                 *)
                     case "$address" in
                         *[[:space:][:cntrl:]]*|*'?'*|*'#'*) ;;
-                        */?*) return ;;
+                        */?*) return 0 ;;
                     esac
                     ;;
             esac
@@ -60,14 +61,15 @@ install_chezmoi() (
 )
 
 if [ "$1" = --validate ]; then
-    validate_source "$2" "$3" "$4"
+    validate_source "$2" "$3" "$4" "$5"
     exit 0
 fi
 
 source=$1
 run_scripts=$2
 with_nix=$3
-validate_source "$source" "$run_scripts" "$with_nix"
+mode=$4
+validate_source "$source" "$run_scripts" "$with_nix" "$mode"
 if [ "$source" = self ]; then
     if ! account=$(gh api --hostname github.com user --jq .login) || [ -z "$account" ]; then
         printf '%s\n' 'Sign in to GitHub in this sandbox to use DOTFILES=self.' >&2
@@ -78,15 +80,37 @@ fi
 
 directory=$HOME/dotfiles
 if [ -e "$directory" ] || [ -L "$directory" ]; then
-    if [ -L "$directory" ] || [ ! -d "$directory/.git" ] ||
-        [ "$(git -C "$directory" config --local --get remote.origin.url)" != "$source" ]; then
+    if [ -L "$directory" ] || [ ! -d "$directory/.git" ]; then
         printf 'Dotfiles destination already exists: %s\n' "$directory" >&2
         exit 1
     fi
+    origin=$(git -C "$directory" config --local --get remote.origin.url) || origin=
+    if [ -z "$source" ]; then
+        validate_source "$origin" "$run_scripts" "$with_nix" apply
+        source=$origin
+    fi
+    if [ "$origin" != "$source" ]; then
+        printf 'Dotfiles checkout at %s has a different origin. Check its remote before retrying.\n' "$directory" >&2
+        exit 1
+    fi
 else
+    if [ "$mode" = update ]; then
+        printf 'No dotfiles checkout at %s. Run the dotfiles action first.\n' "$directory" >&2
+        exit 1
+    fi
     GIT_TERMINAL_PROMPT=0 git clone -- "$source" "$directory"
 fi
 cd "$directory"
+
+if [ "$mode" = update ]; then
+    changes=$(git status --porcelain)
+    if [ -n "$changes" ]; then
+        printf 'Dotfiles checkout at %s has local changes. Commit or stash them before updating.\n' "$directory" >&2
+        exit 1
+    fi
+    GIT_TERMINAL_PROMPT=0 git pull --ff-only origin
+fi
+revision=$(git rev-parse --short HEAD)
 
 export PATH="$HOME/.local/bin:$PATH"
 if [ "$with_nix" = 1 ]; then
@@ -100,6 +124,7 @@ fi
 
 if [ -f install.sh ]; then
     bash ./install.sh
+    method='install.sh completed'
 else
     if ! is_chezmoi_source; then
         printf 'Cloned dotfiles to %s. Add an install.sh or use a chezmoi source.\n' "$directory" >&2
@@ -116,8 +141,19 @@ else
     chezmoi "$@"
     if [ "$run_scripts" = 0 ]; then
         printf '%s\n' 'Chezmoi applied configuration files. Chezmoi scripts skipped.'
+        method='chezmoi, scripts skipped'
+        if [ -f "${XDG_DATA_HOME:-$HOME/.local/share}/devbox/global/default/devbox.json" ]; then
+            printf '%s\n' 'Devbox configuration: present. Devbox packages: not installed by this action.'
+        fi
     else
-        printf '%s\n' 'Chezmoi applied configuration files and enabled repository scripts.'
+        printf '%s\n' 'Chezmoi applied configuration files with repository scripts enabled.'
+        method='chezmoi, scripts enabled'
     fi
 fi
-printf 'Dotfiles installed from %s\n' "$directory"
+state=${XDG_STATE_HOME:-$HOME/.local/state}/t3-code-codex-sandbox
+mkdir -p "$state"
+record=$(mktemp "$state/.dotfiles.XXXXXX")
+trap 'rm -f "$record"' 0
+printf 'Dotfiles last apply: %s (%s)\n' "$revision" "$method" > "$record"
+mv -f "$record" "$state/dotfiles"
+printf 'Dotfiles: applied from %s (%s)\n' "$directory" "$revision"
