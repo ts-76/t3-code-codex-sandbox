@@ -6,6 +6,10 @@ fail() {
     exit 1
 }
 
+. ./scripts/host/settings.sh
+. ./scripts/host/status.sh
+. ./scripts/host/network.sh
+
 require_command() {
     command -v "$1" >/dev/null 2>&1 || fail "Install $1 before running $action."
 }
@@ -20,6 +24,7 @@ show_retry() (
     if [ "${T3_SETUP_FRONTEND:-}" = uvx ]; then
         printf '%s' 'uvx --from git+https://github.com/ts-76/t3-code-codex-sandbox.git t3-code-codex-setup resume --name '
         shell_quote "$NAME"
+        [ -z "$config_file" ] || { printf ' --config '; shell_quote "$config_file"; }
         [ -z "$REPO" ] || { printf ' --repo '; shell_quote "$REPO"; }
         [ -z "$DOTFILES" ] || { printf ' --dotfiles '; shell_quote "$DOTFILES"; }
         [ "$GITHUB_AUTH" = 1 ] || printf ' --skip-github-auth'
@@ -27,6 +32,7 @@ show_retry() (
         [ "$DOTFILES_SCRIPTS" = 0 ] || printf ' --run-dotfiles-scripts'
     else
         set -- "NAME=$NAME" "GITHUB_AUTH=$GITHUB_AUTH"
+        [ -z "$config_file" ] || set -- "$@" "CONFIG=$config_file"
         [ -z "$REPO" ] || set -- "$@" "REPO=$REPO"
         [ -z "$DOTFILES" ] || set -- "$@" "DOTFILES=$DOTFILES"
         [ "$DOTFILES_NIX" = 0 ] || set -- "$@" "DOTFILES_NIX=$DOTFILES_NIX"
@@ -53,82 +59,24 @@ configure_github() {
 }
 
 validate_dotfiles() {
-    sh ./setup-dotfiles.sh --validate "$DOTFILES" "$DOTFILES_SCRIPTS" "$DOTFILES_NIX" "$1"
+    sh ./scripts/sandbox/dotfiles.sh --validate "$DOTFILES" "$DOTFILES_SCRIPTS" "$DOTFILES_NIX" "$1"
 }
 
 configure_dotfiles() (
     mode=$1
     if [ -t 0 ] && [ -t 1 ]; then set -- -it; else set -- -i; fi
-    script=$(cat ./setup-dotfiles.sh) &&
+    script=$(cat ./scripts/sandbox/dotfiles.sh) &&
         sbx exec "$@" "$NAME" -- sh -c "$script" sh "$DOTFILES" "$DOTFILES_SCRIPTS" "$DOTFILES_NIX" "$mode"
 )
 
+run_sandbox_script() (
+    script=$(cat "./scripts/sandbox/$1.sh") || return
+    shift
+    sbx exec "$NAME" -- sh -c "$script" sh "$@"
+)
+
 clone_project() {
-    sbx exec "$NAME" -- sh -c '
-        set -eu
-        url=$1
-        directory=$2
-        if [ -e "$directory" ] || [ -L "$directory" ]; then
-            if [ ! -L "$directory" ] && [ -d "$directory/.git" ]; then
-                origin=$(git -C "$directory" config --local --get remote.origin.url) || origin=
-                origin=${origin%/}
-                if [ "${origin%.git}" = "${url%.git}" ]; then
-                    printf "Repository already cloned at %s\n" "$directory"
-                    exit 0
-                fi
-            fi
-            printf "Project destination already exists: %s\n" "$directory" >&2
-            exit 1
-        fi
-        GIT_TERMINAL_PROMPT=0 git clone -- "$url" "$directory"
-    ' sh "https://github.com/$repository.git" "$workspace"
-}
-
-inspection_field() {
-    printf '%s\n' "$inspection" |
-        awk -v label="$1" '$0 ~ "^[[:space:]]*" label ":[[:space:]]*" {
-            sub("^[[:space:]]*" label ":[[:space:]]*", ""); print; exit
-        }'
-}
-
-show_connection() {
-    printf '\nSandbox: %s\nT3 Code SSH host: %s.sbx\n' "$NAME" "$NAME"
-}
-
-show_details() {
-    sbx exec "$NAME" -- sh -c '
-        export PATH="$PATH:$HOME/.local/bin"
-        tool_version() {
-            if version=$("$1" "$3" 2>/dev/null); then
-                printf "%s: %s\n" "$2" "$version"
-            else
-                printf "%s: unavailable\n" "$2"
-            fi
-        }
-        tool_version t3 "T3 server on PATH" --version
-        tool_version codex "Codex CLI" --version
-        if gh auth status --hostname github.com >/dev/null 2>&1; then
-            printf "%s\n" "GitHub CLI authentication: available"
-        else
-            printf "%s\n" "GitHub CLI authentication: unavailable"
-        fi
-
-        if revision=$(git -C "$HOME/dotfiles" rev-parse --short HEAD 2>/dev/null) && [ -d "$HOME/dotfiles/.git" ]; then
-            printf "Dotfiles checkout: %s (%s)\n" "$HOME/dotfiles" "$revision"
-        else
-            printf "%s\n" "Dotfiles checkout: unavailable"
-        fi
-        state=${XDG_STATE_HOME:-$HOME/.local/state}/t3-code-codex-sandbox/dotfiles
-        if [ -f "$state" ]; then
-            cat "$state"
-        else
-            printf "%s\n" "Dotfiles last apply: no record"
-        fi
-        if [ -f "${XDG_DATA_HOME:-$HOME/.local/share}/devbox/global/default/devbox.json" ]; then
-            printf "%s\n" "Devbox configuration: present"
-            tool_version devbox "Devbox CLI" version
-        fi
-    '
+    run_sandbox_script clone-project "https://github.com/$repository.git" "$workspace"
 }
 
 finish_setup() {
@@ -184,21 +132,15 @@ prepare_docker() {
 }
 
 action=$1
+load_settings
 require_command sbx
 [ -n "$NAME" ] || fail 'Set NAME to the sandbox name.'
 
 case "$action" in
     auth) exec sbx secret set openai --oauth ;;
     github-auth) configure_github; exit ;;
-    status)
-        case "$DETAILS" in 0|1) ;; *) fail 'Set DETAILS to 0 or 1.' ;; esac
-        inspection=$(LC_ALL=C sbx inspect "$NAME")
-        show_connection
-        printf 'State: %s\nCodex credential mode: %s\nWorking directory: %s\n' \
-            "$(inspection_field State)" "$(inspection_field 'Auth mode')" "$(inspection_field 'Working directory')"
-        [ "$DETAILS" = 0 ] || show_details
-        exit
-        ;;
+    status) show_status; exit ;;
+    network) configure_network; exit ;;
     dotfiles|dotfiles-update)
         mode=apply
         [ "$action" != dotfiles-update ] || mode=update
@@ -273,7 +215,7 @@ if [ "$action" = setup ]; then
     github=$(sbx secret ls --global --service github --quiet &&
         sbx secret ls --sandbox "$NAME" --service github --quiet)
     [ -n "$github" ] || set -- --env GH_TOKEN= --env GITHUB_TOKEN= "$@"
-    BUILDX_BUILDER="$BUILDER" sbx create --name "$NAME" --kit ./t3code-ssh "$@"
+    BUILDX_BUILDER="$BUILDER" sbx create --name "$NAME" --kit ./kits/t3code-ssh "$@"
     show_connection
     printf 'Codex authentication: %s\n' "$codex_auth"
 else

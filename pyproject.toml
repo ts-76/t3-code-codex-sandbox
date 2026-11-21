@@ -17,6 +17,5 @@ packages = ["src/t3_code_codex"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "Makefile" = "t3_code_codex/Makefile"
-"sandbox-setup.sh" = "t3_code_codex/sandbox-setup.sh"
-"setup-dotfiles.sh" = "t3_code_codex/setup-dotfiles.sh"
-"t3code-ssh/t3code-ssh.yaml" = "t3_code_codex/t3code-ssh/t3code-ssh.yaml"
+"scripts" = "t3_code_codex/scripts"
+"kits" = "t3_code_codex/kits"

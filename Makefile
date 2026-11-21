@@ -1,17 +1,6 @@
 .DEFAULT_GOAL := help
 
-export NAME ?= t3-code-codex
-export REPO ?=
-export WORKSPACE ?=
-export DOTFILES ?=
-export DOTFILES_SCRIPTS ?= 0
-export DOTFILES_NIX ?= 0
-export T3_VERSION ?=
-export BUILDER ?= sbx-t3-kit-builder
-export GITHUB_AUTH ?= 1
-export DETAILS ?= 0
-
-.PHONY: help setup resume status auth github-auth dotfiles dotfiles-update
+.PHONY: help setup resume status auth github-auth dotfiles dotfiles-update network
 
 help:
 	@printf '%s\n' \
@@ -22,7 +11,9 @@ help:
 	  'make dotfiles-update               Fetch and apply the existing dotfiles checkout' \
 	  'make github-auth                   Sign in to GitHub in the sandbox' \
 	  'make auth                          Sign in to ChatGPT for Docker Sandboxes' \
-	  'Options: NAME, T3_VERSION, GITHUB_AUTH=0, DOTFILES_NIX=1, DOTFILES_SCRIPTS=1'
+	  'make network                       Preview NETWORK_ALLOW rules (APPLY=1 adds them)' \
+	  'Settings: sandbox.local.conf, or CONFIG=/path/to/settings.conf. See config/sandbox.conf.example.'
 
-setup resume status auth github-auth dotfiles dotfiles-update:
-	@sh ./sandbox-setup.sh $@
+# GNU Make passes command-line variable assignments to the script as environment variables.
+setup resume status auth github-auth dotfiles dotfiles-update network:
+	@sh ./scripts/host/setup.sh $@

@@ -8,6 +8,45 @@ Mac の T3 Code から SSH で Docker Sandbox に接続し、サンドボック�
 | サンドボックス | `t3-code-codex` |
 | T3 Code に入力する SSH ホスト | `t3-code-codex.sbx` |
 
+## 自分の設定をファイルに置く
+
+手元にクローンして使う場合は、[設定例](config/sandbox.conf.example) をコピーして編集します。
+
+```sh
+cp config/sandbox.conf.example sandbox.local.conf
+make status
+```
+
+別の場所に置いた設定ファイルも、Make と `uvx` の両方から読み込めます。
+
+```sh
+make status CONFIG=/absolute/path/to/sandbox.conf
+
+uvx --from git+https://github.com/ts-76/t3-code-codex-sandbox.git \
+  t3-code-codex-setup status --config /absolute/path/to/sandbox.conf
+```
+
+ファイルを指定しないときは、Make は Makefile を実行するディレクトリ、`uvx` は呼び出したディレクトリの `sandbox.local.conf` を探します。値は `KEY=value` で1行ずつ書きます。パスに空白があっても引用符は不要です。`WORKSPACE` に相対パスを書くと、設定ファイルと同じ場所が基準になります。コメントは `#` で始まる行に書きます。
+
+コマンドに渡した値が設定ファイルの値より優先されます。たとえば `make status NAME=another-sandbox` や `status --name another-sandbox` で対象を切り替えられます。設定例には、サンドボックス名、ワークスペース、dotfiles、T3 Code の版、GitHub 認証、通信先の項目があります。
+
+### 通信先を確認してから許可する
+
+設定ファイルの `NETWORK_ALLOW` にホスト名をカンマ区切りで書きます。ポート省略時は `443` です。
+
+```ini
+NETWORK_ALLOW=packages.example.com:443,cache.example.com:443
+```
+
+サンドボックス作成後、まず `network` で対象の名前、許可済みのホスト、追加するホストを確認します。
+
+```sh
+make network
+make network APPLY=1
+```
+
+`uvx` では `t3-code-codex-setup network --config /absolute/path/to/sandbox.conf` で確認し、追加する場合だけ `--apply` を付けます。設定済みの他のルールを外したいときは、`sbx policy ls <名前> --wide` で確認して Docker Sandboxes 側で変更します。dotfiles の取得が通信許可の前に止まった場合は、許可を適用したあとに `resume` で続行できます。[Docker の通信ルール](https://docs.docker.com/reference/cli/sbx/policy/allow/network/)
+
 ## 新規作成
 
 Docker Sandboxes（`sbx` v0.51.0 で確認）、Docker Desktop と Buildx、GNU Make、T3 Code デスクトップアプリが必要です。初回は `sbx login` で Docker Sandboxes にサインインします。
@@ -94,15 +133,25 @@ make -C ./t3-code-codex-sandbox setup
 | GitHub 認証 | `github-auth NAME=t3-code-codex` |
 | dotfiles を適用 | `dotfiles NAME=t3-code-codex DOTFILES=self DOTFILES_NIX=1` |
 | 取得済みの dotfiles を更新 | `dotfiles-update NAME=t3-code-codex DOTFILES_NIX=1` |
+| 通信許可の確認 | `network NAME=t3-code-codex`。ルールを追加するときだけ `APPLY=1` を指定。 |
 
 作成時のオプションは `make help` で確認できます。`REPO=owner/repo` でクローンし、`WORKSPACE=/absolute/path/to/project` でホストのフォルダを共有します。`GITHUB_AUTH=0`、`T3_VERSION=0.1.11`、`DOTFILES_SCRIPTS=1` も指定できます。
 
 ## キットの開発
 
-[t3code-ssh.yaml](t3code-ssh/t3code-ssh.yaml) は T3 Code の公式 Linux アーカイブをダウンロードし、SHA-256 を照合して組み込みます。配布時はソースからローカルでビルドします。
+[t3code-ssh.yaml](kits/t3code-ssh/t3code-ssh.yaml) は T3 Code の公式 Linux アーカイブをダウンロードし、SHA-256 を照合して組み込みます。配布時はソースからローカルでビルドします。
+
+| フォルダ | 内容 |
+| --- | --- |
+| `config/` | 個人設定のテンプレート |
+| `kits/` | Docker Sandboxes のキット定義 |
+| `scripts/host/` | ホストで実行する作成・再開、設定、通信許可、診断 |
+| `scripts/sandbox/` | サンドボックス内で実行するクローン、dotfiles、診断 |
+| `src/` | `uvx` から使う Python の入口 |
+| `tests/` | Make と Python の入口を通す回帰テスト |
 
 ```sh
-sbx kit validate ./t3code-ssh
+sbx kit validate ./kits/t3code-ssh
 python3 -B -m unittest discover -s tests
 ```
 

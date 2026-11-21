@@ -1,0 +1,12 @@
+# Copy to sandbox.local.conf or select this file explicitly with CONFIG / --config.
+# Values are literal. Place comments on separate lines and leave paths unquoted.
+NAME=t3-code-codex
+# REPO=owner/repo
+# WORKSPACE=../my project
+# T3_VERSION=0.1.11
+# BUILDER=sbx-t3-kit-builder
+# GITHUB_AUTH=1
+# DOTFILES=self
+# DOTFILES_NIX=1
+# DOTFILES_SCRIPTS=0
+# NETWORK_ALLOW=packages.example.com:443,cache.example.com:443

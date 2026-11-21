@@ -41,6 +41,15 @@ elif action == "secret":
 elif action == "create":
     created.write_text(args[args.index("--name") + 1])
     (root / "create-args").write_text("\\n".join(args))
+elif action == "policy":
+    operation, resource, scope, name, endpoint = args
+    assert (resource, scope, name) == ("network", "--sandbox", created.read_text())
+    rules = root / "rules"
+    allowed = rules.read_text().splitlines() if rules.exists() else []
+    if operation == "check":
+        sys.exit(endpoint not in allowed)
+    assert operation == "allow"
+    rules.write_text("\\n".join(allowed + endpoint.split(",")) + "\\n")
 elif action == "exec":
     command = args[args.index("--") + 1:]
     command = [
@@ -106,6 +115,17 @@ printf '%s\\n' "$*" > "$FIXTURE_ROOT/chezmoi-args"
 
     def make(self, target, *args, **kwargs):
         return self.run_command("make", "-C", str(ROOT), target, f"NAME={NAME}", *args, **kwargs)
+
+    def cli(self, *args, extra_env=None, success=True):
+        package = self.root / "package" / "t3_code_codex"
+        package.mkdir(parents=True, exist_ok=True)
+        shutil.copy(ROOT / "src/t3_code_codex/__init__.py", package / "__init__.py")
+        shutil.copy(ROOT / "Makefile", package / "Makefile")
+        shutil.copytree(ROOT / "scripts", package / "scripts", dirs_exist_ok=True)
+        return self.run_command(
+            sys.executable, "-c", "from t3_code_codex import main; raise SystemExit(main())",
+            *args, extra_env={"PYTHONPATH": str(package.parent)} | (extra_env or {}), success=success,
+        )
 
     def git(self, repository, *args):
         return self.run_command(
@@ -227,20 +247,63 @@ printf '%s\\n' "$*" > "$FIXTURE_ROOT/chezmoi-args"
         self.assertIn(f"Dotfiles last apply: {applied}", status.stdout)
 
     def test_cli_from_another_directory_provides_a_cli_retry(self):
-        package = self.root / "package" / "t3_code_codex"
-        package.mkdir(parents=True)
-        for source in (
-            ROOT / "src/t3_code_codex/__init__.py",
-            ROOT / "Makefile",
-            ROOT / "sandbox-setup.sh",
-            ROOT / "setup-dotfiles.sh",
-        ):
-            shutil.copy(source, package / source.name)
-        result = self.run_command(
-            sys.executable, "-c", "from t3_code_codex import main; raise SystemExit(main())",
+        result = self.cli(
             "--name", NAME, "--repo", "fixture-user/project", "--dotfiles", "self", "--dotfiles-nix",
-            extra_env={"PYTHONPATH": str(package.parent), "FAIL_GITHUB": "yes"}, success=False,
+            extra_env={"FAIL_GITHUB": "yes"}, success=False,
         )
         command = re.search(r"uvx --from .* t3-code-codex-setup resume .*", result.stderr)
         self.assertIsNotNone(command, result.stderr)
         self.assertIn(f"--name '{NAME}' --repo 'fixture-user/project' --dotfiles 'self' --dotfiles-nix", command[0])
+
+    def test_make_config_resolves_the_workspace_and_accepts_overrides(self):
+        workspace = self.root / "shared project"
+        workspace.mkdir()
+        config = self.root / "my settings.conf"
+        config.write_text(
+            "  NAME = from-config  \nWORKSPACE=shared project\nT3_VERSION=0.1.10\n"
+            "GITHUB_AUTH=0\nNETWORK_ALLOW=packages.example.org"
+        )
+        result = self.run_command("make", "-C", str(ROOT), "setup", f"CONFIG={config}", "T3_VERSION=0.1.11")
+        self.assertIn("Sandbox: from-config", result.stdout)
+        self.assertIn(f"Workspace: {workspace}", result.stdout)
+        created = (self.root / "create-args").read_text().splitlines()
+        self.assertIn("t3code-ssh.version=0.1.11", created)
+        self.assertNotIn("policy", self.trace.read_text())
+
+    def test_cli_uses_the_configuration_in_its_calling_directory(self):
+        self.repository("dotfiles-source", "dot_aliases", "alias hi=true\n")
+        self.existing_sandbox()
+        (self.root / "sandbox.local.conf").write_text("NAME=configured\nDOTFILES=self\n")
+        result = self.cli("dotfiles", "--name", NAME, "--dotfiles-nix")
+        self.assertIn("Dotfiles: applied", result.stdout)
+        self.assertIn("--exclude=scripts", (self.root / "chezmoi-args").read_text())
+
+    def test_unknown_config_key_fails_before_contacting_sbx(self):
+        config = self.root / "bad.conf"
+        config.write_text("NETWORK_ALLOWS=packages.example.org\n")
+        result = self.make("status", f"CONFIG={config}", success=False)
+        self.assertIn("Unknown setting: NETWORK_ALLOWS", result.stderr)
+        self.assertFalse(self.trace.exists())
+
+    def test_network_config_previews_and_only_adds_missing_rules_on_apply(self):
+        self.existing_sandbox()
+        config = self.root / "network settings.conf"
+        config.write_text(f"NAME={NAME}\nNETWORK_ALLOW=cache.example.org, packages.example.org:443, PACKAGES.example.org")
+        rules = self.root / "rules"
+        rules.write_text("cache.example.org:443\n")
+
+        result = self.cli("network", "--config", config.name)
+        self.assertIn("Already allowed: cache.example.org:443", result.stdout)
+        self.assertIn("Preview only", result.stdout)
+        self.assertEqual(result.stdout.count("To allow: packages.example.org:443"), 1)
+        self.assertEqual(rules.read_text(), "cache.example.org:443\n")
+
+        self.make("network", f"CONFIG={config}", "APPLY=1")
+        self.cli("network", "--config", config.name, "--apply")
+        self.assertEqual(rules.read_text(), "cache.example.org:443\npackages.example.org:443\n")
+
+    def test_malformed_network_list_cannot_apply_any_rules(self):
+        self.existing_sandbox()
+        self.make("network", "NETWORK_ALLOW=packages.example.org,*.example.org", "APPLY=1", success=False)
+        self.assertFalse(self.trace.exists())
+        self.assertFalse((self.root / "rules").exists())
