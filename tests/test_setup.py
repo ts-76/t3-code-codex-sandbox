@@ -119,7 +119,7 @@ printf '%s\\n' "$*" > "$FIXTURE_ROOT/chezmoi-args"
     def cli(self, *args, extra_env=None, success=True):
         package = self.root / "package" / "t3_code_codex"
         package.mkdir(parents=True, exist_ok=True)
-        shutil.copy(ROOT / "src/t3_code_codex/__init__.py", package / "__init__.py")
+        shutil.copy(ROOT / "t3_code_codex/__init__.py", package / "__init__.py")
         shutil.copy(ROOT / "Makefile", package / "Makefile")
         shutil.copytree(ROOT / "scripts", package / "scripts", dirs_exist_ok=True)
         return self.run_command(

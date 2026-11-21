@@ -215,7 +215,7 @@ if [ "$action" = setup ]; then
     github=$(sbx secret ls --global --service github --quiet &&
         sbx secret ls --sandbox "$NAME" --service github --quiet)
     [ -n "$github" ] || set -- --env GH_TOKEN= --env GITHUB_TOKEN= "$@"
-    BUILDX_BUILDER="$BUILDER" sbx create --name "$NAME" --kit ./kits/t3code-ssh "$@"
+    BUILDX_BUILDER="$BUILDER" sbx create --name "$NAME" --kit ./t3code-ssh "$@"
     show_connection
     printf 'Codex authentication: %s\n' "$codex_auth"
 else

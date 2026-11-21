@@ -10,10 +10,10 @@ Mac の T3 Code から SSH で Docker Sandbox に接続し、サンドボック�
 
 ## 自分の設定をファイルに置く
 
-手元にクローンして使う場合は、[設定例](config/sandbox.conf.example) をコピーして編集します。
+手元にクローンして使う場合は、[設定例](sandbox.conf.example) をコピーして編集します。
 
 ```sh
-cp config/sandbox.conf.example sandbox.local.conf
+cp sandbox.conf.example sandbox.local.conf
 make status
 ```
 
@@ -139,19 +139,19 @@ make -C ./t3-code-codex-sandbox setup
 
 ## キットの開発
 
-[t3code-ssh.yaml](kits/t3code-ssh/t3code-ssh.yaml) は T3 Code の公式 Linux アーカイブをダウンロードし、SHA-256 を照合して組み込みます。配布時はソースからローカルでビルドします。
+[t3code-ssh.yaml](t3code-ssh/t3code-ssh.yaml) は T3 Code の公式 Linux アーカイブをダウンロードし、SHA-256 を照合して組み込みます。配布時はソースからローカルでビルドします。
 
-| フォルダ | 内容 |
+| パス | 内容 |
 | --- | --- |
-| `config/` | 個人設定のテンプレート |
-| `kits/` | Docker Sandboxes のキット定義 |
+| `sandbox.conf.example` | 個人設定のテンプレート |
+| `t3code-ssh/` | Docker Sandboxes のキット定義 |
 | `scripts/host/` | ホストで実行する作成・再開、設定、通信許可、診断 |
 | `scripts/sandbox/` | サンドボックス内で実行するクローン、dotfiles、診断 |
-| `src/` | `uvx` から使う Python の入口 |
+| `t3_code_codex/` | `uvx` から使う Python の入口 |
 | `tests/` | Make と Python の入口を通す回帰テスト |
 
 ```sh
-sbx kit validate ./kits/t3code-ssh
+sbx kit validate ./t3code-ssh
 python3 -B -m unittest discover -s tests
 ```
 

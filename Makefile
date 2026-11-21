@@ -12,7 +12,7 @@ help:
 	  'make github-auth                   Sign in to GitHub in the sandbox' \
 	  'make auth                          Sign in to ChatGPT for Docker Sandboxes' \
 	  'make network                       Preview NETWORK_ALLOW rules (APPLY=1 adds them)' \
-	  'Settings: sandbox.local.conf, or CONFIG=/path/to/settings.conf. See config/sandbox.conf.example.'
+	  'Settings: sandbox.local.conf, or CONFIG=/path/to/settings.conf. See sandbox.conf.example.'
 
 # GNU Make passes command-line variable assignments to the script as environment variables.
 setup resume status auth github-auth dotfiles dotfiles-update network:
