@@ -89,6 +89,7 @@ printf '%s\\n' "$*" > "$FIXTURE_ROOT/chezmoi-args"
         self.install_mock(bin_dir, "nix", "#!/bin/sh\nexit 0\n")
         self.install_mock(bin_dir, "t3", "#!/bin/sh\nprintf '%s\\n' 't3 v0.1.11'\n")
         self.install_mock(bin_dir, "codex", "#!/bin/sh\nprintf '%s\\n' 'codex-cli 0.1.0'\n")
+        self.install_mock(bin_dir, "devbox", '#!/bin/sh\n[ "$1" = version ] || exit 1\nprintf "%s\\n" 0.22.0\n')
 
     def install_mock(self, directory, name, contents):
         path = directory / name
@@ -177,6 +178,9 @@ printf '%s\\n' "$*" > "$FIXTURE_ROOT/chezmoi-args"
 
     def test_status_checks_inside_only_on_request(self):
         self.existing_sandbox()
+        devbox_config = self.home / ".local/share/devbox/global/default/devbox.json"
+        devbox_config.parent.mkdir(parents=True)
+        devbox_config.write_text("{}")
         status = self.make("status")
         self.assertIn("State: stopped", status.stdout)
         self.assertNotIn("exec", self.trace.read_text())
@@ -185,6 +189,7 @@ printf '%s\\n' "$*" > "$FIXTURE_ROOT/chezmoi-args"
         self.assertIn("T3 server on PATH: t3 v0.1.11", detailed.stdout)
         self.assertIn("GitHub CLI authentication: available", detailed.stdout)
         self.assertIn("Dotfiles last apply: no record", detailed.stdout)
+        self.assertIn("Devbox CLI: 0.22.0", detailed.stdout)
         self.assertIn("exec", self.trace.read_text())
 
     def test_dotfiles_update_applies_new_revision_and_refuses_dirty_checkout(self):

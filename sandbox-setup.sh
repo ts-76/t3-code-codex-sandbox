@@ -99,14 +99,14 @@ show_details() {
     sbx exec "$NAME" -- sh -c '
         export PATH="$PATH:$HOME/.local/bin"
         tool_version() {
-            if version=$("$1" --version 2>/dev/null); then
+            if version=$("$1" "$3" 2>/dev/null); then
                 printf "%s: %s\n" "$2" "$version"
             else
                 printf "%s: unavailable\n" "$2"
             fi
         }
-        tool_version t3 "T3 server on PATH"
-        tool_version codex "Codex CLI"
+        tool_version t3 "T3 server on PATH" --version
+        tool_version codex "Codex CLI" --version
         if gh auth status --hostname github.com >/dev/null 2>&1; then
             printf "%s\n" "GitHub CLI authentication: available"
         else
@@ -126,7 +126,7 @@ show_details() {
         fi
         if [ -f "${XDG_DATA_HOME:-$HOME/.local/share}/devbox/global/default/devbox.json" ]; then
             printf "%s\n" "Devbox configuration: present"
-            tool_version devbox "Devbox CLI"
+            tool_version devbox "Devbox CLI" version
         fi
     '
 }
