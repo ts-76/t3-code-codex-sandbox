@@ -29,6 +29,8 @@ To prepare a project during setup, choose one of these options.
 
 Use `--name` to choose a sandbox name. Pass `--skip-github-auth` to sign in to GitHub later. The default T3 Code version is `0.1.11`. Use `--t3-version` to match your desktop app version. [T3 Code's SSH startup implementation](https://github.com/pingdotgg/t3code/blob/v0.1.11/packages/ssh/src/tunnel.ts#L2995-L3026)
 
+The sandbox is built from Docker's `codex` kit, which resolves to the latest release (`docker.io/sbx/codex:latest`). To pin it, pass `--codex-kit docker.io/sbx/codex:0.171.0` or set `CODEX_KIT` in the settings file. A newer kit can require a newer `sbx` release. Setup adds T3 Code with `sbx create --kit` and `--kit-arg`, which `sbx` v0.51.0 marks as experimental. If setup fails after you upgrade `sbx`, check `sbx create --help` for changes to these options. [Docker's guide to using kits](https://docs.docker.com/ai/sandboxes/customize/use-kits/)
+
 ## Connect from T3 Code
 
 1. Open **Settings → Environments → Add environment → SSH** and enter the hostname printed by setup.
@@ -195,11 +197,13 @@ Pass the cloned kit directory to `-C`. Use an absolute path when running from an
 | Link to T3 Code on your Mac | `link-setup NAME=t3-code-codex`. Add `LINK_ACCESS=approval-required` to narrow it. |
 | Remove the link | `link-stop NAME=t3-code-codex` |
 
-Run `make help` for setup options. Use `REPO=owner/repo` to clone a repository or `WORKSPACE=/absolute/path/to/project` to share a host directory. Other options include `GITHUB_AUTH=0`, `T3_VERSION=0.1.11`, and `DOTFILES_SCRIPTS=1`.
+Run `make help` for setup options. Use `REPO=owner/repo` to clone a repository or `WORKSPACE=/absolute/path/to/project` to share a host directory. Other options include `GITHUB_AUTH=0`, `T3_VERSION=0.1.11`, `CODEX_KIT=docker.io/sbx/codex:0.171.0`, and `DOTFILES_SCRIPTS=1`.
 
 ## Develop the kit
 
 [`t3code-ssh.yaml`](t3code-ssh/t3code-ssh.yaml) downloads the official T3 Code Linux archive, verifies its SHA-256 checksum, and installs it in the sandbox. The kit is built locally from source.
+
+Docker also publishes a T3 Code kit, but as of November 2026 it does not replace `t3code-ssh`. `docker.io/sbx/t3code-kit` uses the v2 format, which `sbx` refuses to combine with the v3 `codex` kit. The v3 `docker.io/sbx/t3code` installs `t3` 0.0.45, which is fixed when Docker builds the kit and does not match the desktop app. It also installs `libatomic1` with apt when the sandbox is created. The archive that `t3code-ssh` installs includes that library. [Docker's T3 Code kit](https://github.com/docker/sbx-kits-contrib/tree/v3/t3code)
 
 | Path | Contents |
 | --- | --- |

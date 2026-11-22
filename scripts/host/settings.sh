@@ -5,7 +5,7 @@ trim() {
 
 read_config() {
     unset cfg_NAME cfg_REPO cfg_WORKSPACE cfg_DOTFILES cfg_DOTFILES_NIX \
-        cfg_DOTFILES_SCRIPTS cfg_T3_VERSION cfg_BUILDER cfg_GITHUB_AUTH cfg_NETWORK_ALLOW \
+        cfg_DOTFILES_SCRIPTS cfg_T3_VERSION cfg_CODEX_KIT cfg_BUILDER cfg_GITHUB_AUTH cfg_NETWORK_ALLOW \
         cfg_MCP_HOSTNAME cfg_MCP_LOCAL_PORT cfg_MCP_ACCESS cfg_LINK_ACCESS
     config_file=
     start_dir=${T3_SETUP_CWD:-$PWD}
@@ -32,7 +32,7 @@ read_config() {
         key=$(trim "${line%%=*}")
         value=$(trim "${line#*=}")
         case "$key" in
-            NAME|REPO|WORKSPACE|DOTFILES|DOTFILES_NIX|DOTFILES_SCRIPTS|T3_VERSION|BUILDER|GITHUB_AUTH|NETWORK_ALLOW|MCP_HOSTNAME|MCP_LOCAL_PORT|MCP_ACCESS|LINK_ACCESS)
+            NAME|REPO|WORKSPACE|DOTFILES|DOTFILES_NIX|DOTFILES_SCRIPTS|T3_VERSION|CODEX_KIT|BUILDER|GITHUB_AUTH|NETWORK_ALLOW|MCP_HOSTNAME|MCP_LOCAL_PORT|MCP_ACCESS|LINK_ACCESS)
                 export "cfg_$key=$value"
                 ;;
             *) fail "$config_file:$number: Unknown setting: $key" ;;
@@ -61,6 +61,7 @@ load_settings() {
                 case "$WORKSPACE" in ''|/*) ;; *) WORKSPACE="${config_file%/*}/$WORKSPACE" ;; esac
             fi
             T3_VERSION=${T3_VERSION-${cfg_T3_VERSION-}}
+            CODEX_KIT=${CODEX_KIT-${cfg_CODEX_KIT-}}
             BUILDER=${BUILDER-${cfg_BUILDER-sbx-t3-kit-builder}}
             ;;
     esac
@@ -72,6 +73,7 @@ load_settings() {
     esac
     WORKSPACE=${WORKSPACE-}
     T3_VERSION=${T3_VERSION-}
+    CODEX_KIT=${CODEX_KIT-}
     case "$action" in
         setup|resume|dotfiles|dotfiles-update)
             DOTFILES=${DOTFILES-${cfg_DOTFILES-}}

@@ -24,6 +24,10 @@ def main() -> int:
     project.add_argument("--repo", help="GitHub repository to clone inside the sandbox.")
     project.add_argument("--workspace", type=Path, help="Local directory to share.")
     parser.add_argument("--t3-version", help="T3 Code version to install.")
+    parser.add_argument(
+        "--codex-kit",
+        help="Codex kit to create the sandbox from, such as docker.io/sbx/codex:0.171.0 (default: codex, the latest).",
+    )
     github = parser.add_mutually_exclusive_group()
     github.add_argument(
         "--github-auth", action="store_true", dest="github_auth", default=None,
@@ -61,8 +65,8 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if args.action != "setup" and (args.workspace or args.t3_version):
-        parser.error("--workspace and --t3-version require setup.")
+    if args.action != "setup" and (args.workspace or args.t3_version or args.codex_kit):
+        parser.error("--workspace, --t3-version and --codex-kit require setup.")
     if args.action not in ("setup", "resume") and (args.repo is not None or args.github_auth is not None):
         parser.error("--repo and GitHub authentication options require setup or resume.")
     if args.details and args.action != "status":
@@ -89,6 +93,7 @@ def main() -> int:
         "REPO": args.repo,
         "WORKSPACE": str(args.workspace.expanduser().resolve()) if args.workspace is not None else None,
         "T3_VERSION": args.t3_version,
+        "CODEX_KIT": args.codex_kit,
         "GITHUB_AUTH": args.github_auth,
         "DETAILS": "1" if args.details else None,
         "DOTFILES": args.dotfiles,

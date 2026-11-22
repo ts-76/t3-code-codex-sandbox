@@ -4,6 +4,7 @@ NAME=t3-code-codex
 # REPO=owner/repo
 # WORKSPACE=../my project
 # T3_VERSION=0.1.11
+# CODEX_KIT=docker.io/sbx/codex:0.171.0
 # BUILDER=sbx-t3-kit-builder
 # GITHUB_AUTH=1
 # DOTFILES=self

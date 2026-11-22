@@ -316,14 +316,24 @@ printf '%s\\n' "$*" > "$FIXTURE_ROOT/chezmoi-args"
         config = self.root / "my settings.conf"
         config.write_text(
             "  NAME = from-config  \nWORKSPACE=shared project\nT3_VERSION=0.1.10\n"
-            "GITHUB_AUTH=0\nNETWORK_ALLOW=packages.example.org"
+            "CODEX_KIT=docker.io/sbx/codex:0.170.0\nGITHUB_AUTH=0\nNETWORK_ALLOW=packages.example.org"
         )
         result = self.run_command("make", "-C", str(ROOT), "setup", f"CONFIG={config}", "T3_VERSION=0.1.11")
         self.assertIn("Sandbox: from-config", result.stdout)
         self.assertIn(f"Workspace: {workspace}", result.stdout)
         created = (self.root / "create-args").read_text().splitlines()
         self.assertIn("t3code-ssh.version=0.1.11", created)
+        self.assertIn("docker.io/sbx/codex:0.170.0", created)
+        self.assertNotIn("codex", created)
         self.assertNotIn("policy", self.trace.read_text())
+
+    def test_setup_uses_the_latest_codex_kit_by_default_and_rejects_invalid_references(self):
+        self.make("setup", f"NAME={NAME}", "GITHUB_AUTH=0")
+        self.assertIn("codex", (self.root / "create-args").read_text().splitlines())
+        result = self.make("setup", "NAME=another", "GITHUB_AUTH=0", "CODEX_KIT=--rm", success=False)
+        self.assertIn("Set CODEX_KIT to codex", result.stderr)
+        resumed = self.cli("resume", "--name", NAME, "--codex-kit", "docker.io/sbx/codex:0.171.0", success=False)
+        self.assertIn("--codex-kit require setup", resumed.stderr)
 
     def test_cli_uses_the_configuration_in_its_calling_directory(self):
         self.repository("dotfiles-source", "dot_aliases", "alias hi=true\n")

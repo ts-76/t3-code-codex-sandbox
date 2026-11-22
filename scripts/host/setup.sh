@@ -168,7 +168,7 @@ fi
 mounted_workspace=
 workspace=/home/agent/workspace
 if [ "$action" = resume ]; then
-    [ -z "$WORKSPACE$T3_VERSION" ] || fail 'WORKSPACE and T3_VERSION require setup.'
+    [ -z "$WORKSPACE$T3_VERSION$CODEX_KIT" ] || fail 'WORKSPACE, T3_VERSION and CODEX_KIT require setup.'
     inspection=$(LC_ALL=C sbx inspect "$NAME")
     workspace=$(inspection_field 'Working directory')
     [ -n "$workspace" ] || fail 'Could not determine the existing sandbox working directory.'
@@ -197,10 +197,14 @@ fi
 
 if [ "$action" = setup ]; then
     [ -n "$BUILDER" ] || fail 'Set BUILDER to the Docker Buildx builder name.'
+    case "$CODEX_KIT" in
+        ''|codex) ;;
+        -*|*[!A-Za-z0-9._/:@-]*) fail 'Set CODEX_KIT to codex or a Codex kit reference such as docker.io/sbx/codex:0.171.0.' ;;
+    esac
     sandboxes=$(sbx ls --quiet)
     if printf '%s\n' "$sandboxes" | grep -Fqx -- "$NAME"; then
         printf 'Sandbox %s already exists. Connect to %s.sbx or choose another NAME.\n' "$NAME" "$NAME" >&2
-        if [ -z "$WORKSPACE$T3_VERSION" ]; then show_retry; fi
+        if [ -z "$WORKSPACE$T3_VERSION$CODEX_KIT" ]; then show_retry; fi
         exit 1
     fi
     require_command docker
@@ -215,7 +219,7 @@ if [ "$action" = setup ]; then
 
     prepare_docker
     sbx setup ssh
-    set -- codex
+    set -- "${CODEX_KIT:-codex}"
     [ -z "$mounted_workspace" ] || set -- "$@" "$mounted_workspace"
     [ -z "$T3_VERSION" ] || set -- --kit-arg "t3code-ssh.version=$T3_VERSION" "$@"
     github=$(sbx secret ls --global --service github --quiet &&

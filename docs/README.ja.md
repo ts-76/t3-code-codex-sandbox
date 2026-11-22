@@ -29,6 +29,8 @@ uvx --from git+https://github.com/ts-76/t3-code-codex-sandbox.git t3-code-codex-
 
 `--name` で別名を付けられます。GitHub 認証を後回しにする場合は `--skip-github-auth` を指定します。T3 Code の既定バージョンは `0.1.11` です。デスクトップアプリの版に合わせる場合は `--t3-version` を指定します。[T3 Code の SSH 起動処理](https://github.com/pingdotgg/t3code/blob/v0.1.11/packages/ssh/src/tunnel.ts#L2995-L3026)
 
+サンドボックスは Docker の `codex` キットから作られ、常に最新版（`docker.io/sbx/codex:latest`）が使われます。版を固定する場合は `--codex-kit docker.io/sbx/codex:0.171.0` を指定するか、設定ファイルに `CODEX_KIT` を書きます。新しいキットは、より新しい `sbx` を必要とすることがあります。T3 Code の追加には `sbx create` の `--kit` と `--kit-arg` を使っており、`sbx` v0.51.0 ではどちらも実験的な機能（Experimental）とされています。`sbx` の更新後にセットアップが失敗する場合は、`sbx create --help` でこれらのオプションが変わっていないか確認してください。[Docker のキット利用ガイド](https://docs.docker.com/ai/sandboxes/customize/use-kits/)
+
 ## T3 Code から接続する
 
 1. **Settings → Environments → Add environment → SSH** を開き、ログに表示されたホスト名を入力して接続します。
@@ -195,11 +197,13 @@ make -C ./t3-code-codex-sandbox setup
 | Mac の T3 Code にリンク | `link-setup NAME=t3-code-codex`。権限を絞るときは `LINK_ACCESS=approval-required` を指定。 |
 | リンクを外す | `link-stop NAME=t3-code-codex` |
 
-作成時のオプションは `make help` で確認できます。`REPO=owner/repo` でクローンし、`WORKSPACE=/absolute/path/to/project` でホストのフォルダを共有します。`GITHUB_AUTH=0`、`T3_VERSION=0.1.11`、`DOTFILES_SCRIPTS=1` も指定できます。
+作成時のオプションは `make help` で確認できます。`REPO=owner/repo` でクローンし、`WORKSPACE=/absolute/path/to/project` でホストのフォルダを共有します。`GITHUB_AUTH=0`、`T3_VERSION=0.1.11`、`CODEX_KIT=docker.io/sbx/codex:0.171.0`、`DOTFILES_SCRIPTS=1` も指定できます。
 
 ## キットの開発
 
 [t3code-ssh.yaml](../t3code-ssh/t3code-ssh.yaml) は T3 Code の公式 Linux アーカイブをダウンロードし、SHA-256 を照合して組み込みます。配布時はソースからローカルでビルドします。
+
+Docker も T3 Code 用のキットを公開していますが、2026年11月時点では `t3code-ssh` の代わりになりません。`docker.io/sbx/t3code-kit` は v2 形式のため、`sbx` が v3 の `codex` キットとの組み合わせを拒否します。v3 形式の `docker.io/sbx/t3code` が入れる `t3` は 0.0.45 で、この版は Docker がキットを作った時点で決まっており、デスクトップアプリと合いません。また、サンドボックスの作成時に apt で `libatomic1` を入れます。`t3code-ssh` が入れるアーカイブには、このライブラリが同梱されています。[Docker の T3 Code キット](https://github.com/docker/sbx-kits-contrib/tree/v3/t3code)
 
 | パス | 内容 |
 | --- | --- |
