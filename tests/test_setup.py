@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -120,7 +121,6 @@ printf '%s\\n' "$*" > "$FIXTURE_ROOT/chezmoi-args"
         package = self.root / "package" / "t3_code_codex"
         package.mkdir(parents=True, exist_ok=True)
         shutil.copy(ROOT / "t3_code_codex/__init__.py", package / "__init__.py")
-        shutil.copy(ROOT / "Makefile", package / "Makefile")
         shutil.copytree(ROOT / "scripts", package / "scripts", dirs_exist_ok=True)
         return self.run_command(
             sys.executable, "-c", "from t3_code_codex import main; raise SystemExit(main())",
@@ -196,6 +196,20 @@ printf '%s\\n' "$*" > "$FIXTURE_ROOT/chezmoi-args"
         self.assertIn("workspace attachment", result.stderr)
         self.assertEqual(self.trace.read_text(), "inspect\n")
 
+    def test_make_retry_keeps_the_workspace_instead_of_the_configured_repository(self):
+        workspace = self.root / "shared project"
+        workspace.mkdir()
+        config = self.root / "settings.conf"
+        config.write_text("REPO=fixture-user/project\n")
+        interrupted = self.make(
+            "setup", f"CONFIG={config}", f"WORKSPACE={workspace}",
+            success=False, extra_env={"FAIL_GITHUB": "yes"},
+        )
+        retry = next(line.strip() for line in interrupted.stderr.splitlines() if "make -C" in line)
+        self.assertIn("REPO=", shlex.split(retry))
+        resumed = self.run_command("sh", "-c", retry, extra_env={"FIXTURE_MOUNT": str(workspace)})
+        self.assertIn("Choose Local folder", resumed.stdout)
+
     def test_status_checks_inside_only_on_request(self):
         self.existing_sandbox()
         devbox_config = self.home / ".local/share/devbox/global/default/devbox.json"
@@ -233,6 +247,17 @@ printf '%s\\n' "$*" > "$FIXTURE_ROOT/chezmoi-args"
         self.assertEqual(self.git(checkout, "rev-parse", "--short", "HEAD"), revision)
         self.assertEqual((self.home / ".config-test").read_text(), "second")
 
+    def test_dotfiles_can_reapply_an_existing_checkout_without_reentering_the_source(self):
+        repo = self.repository("dotfiles-source", "install.sh", 'printf first > "$HOME/.config-test"\n')
+        self.existing_sandbox()
+        self.make("dotfiles", "DOTFILES=self")
+        applied = self.git(repo, "rev-parse", "--short", "HEAD")
+        self.commit(repo, "install.sh", 'printf second > "$HOME/.config-test"\n')
+        (self.home / ".config-test").unlink()
+        result = self.cli("dotfiles", "--name", NAME)
+        self.assertIn(f"({applied})", result.stdout)
+        self.assertEqual((self.home / ".config-test").read_text(), "first")
+
     def test_failed_update_keeps_the_previous_successful_apply_in_status(self):
         repo = self.repository("dotfiles-source", "install.sh", "exit 0\n")
         self.existing_sandbox()
@@ -253,7 +278,37 @@ printf '%s\\n' "$*" > "$FIXTURE_ROOT/chezmoi-args"
         )
         command = re.search(r"uvx --from .* t3-code-codex-setup resume .*", result.stderr)
         self.assertIsNotNone(command, result.stderr)
-        self.assertIn(f"--name '{NAME}' --repo 'fixture-user/project' --dotfiles 'self' --dotfiles-nix", command[0])
+        self.assertIn(f"--name '{NAME}' --repo 'fixture-user/project' --dotfiles 'self'", command[0])
+        self.assertIn("--dotfiles-nix", shlex.split(command[0]))
+
+    def test_cli_retry_preserves_workspace_and_explicit_config_overrides(self):
+        self.repository("dotfiles-source", "dot_aliases", "alias hi=true\n")
+        workspace = self.root / "shared project"
+        workspace.mkdir()
+        (self.root / "sandbox.local.conf").write_text(
+            f"NAME={NAME}\nREPO=fixture-user/project\nGITHUB_AUTH=0\n"
+            "DOTFILES=self\nDOTFILES_NIX=1\nDOTFILES_SCRIPTS=1\n"
+        )
+        interrupted = self.cli(
+            "setup", "--workspace", str(workspace), "--github-auth",
+            "--no-dotfiles-nix", "--no-run-dotfiles-scripts",
+            success=False, extra_env={"FAIL_GITHUB": "yes"},
+        )
+        self.assertIn("GitHub setup: incomplete", interrupted.stderr)
+        retry = next(line.strip() for line in interrupted.stderr.splitlines() if line.lstrip().startswith("uvx "))
+        retry_arguments = shlex.split(retry)[4:]
+        self.assertIn("--github-auth", retry_arguments)
+        self.assertIn("--no-dotfiles-nix", retry_arguments)
+        resumed = self.cli(*retry_arguments, extra_env={"FIXTURE_MOUNT": str(workspace)})
+        self.assertIn("GitHub authentication: configured", resumed.stdout)
+        self.assertIn("Choose Local folder", resumed.stdout)
+        self.assertIn("--exclude=scripts", (self.root / "chezmoi-args").read_text())
+        self.assertFalse((self.root / "workspace" / "project").exists())
+
+    def test_cli_is_independent_of_invoking_shell_make_options(self):
+        self.existing_sandbox()
+        status = self.cli("status", "--name", NAME, extra_env={"MAKEFLAGS": "--question"})
+        self.assertIn("State: stopped", status.stdout)
 
     def test_make_config_resolves_the_workspace_and_accepts_overrides(self):
         workspace = self.root / "shared project"

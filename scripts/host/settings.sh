@@ -6,7 +6,7 @@ trim() {
 read_config() {
     unset cfg_NAME cfg_REPO cfg_WORKSPACE cfg_DOTFILES cfg_DOTFILES_NIX \
         cfg_DOTFILES_SCRIPTS cfg_T3_VERSION cfg_BUILDER cfg_GITHUB_AUTH cfg_NETWORK_ALLOW \
-        cfg_MCP_HOSTNAME cfg_MCP_LOCAL_PORT cfg_MCP_ACCESS
+        cfg_MCP_HOSTNAME cfg_MCP_LOCAL_PORT cfg_MCP_ACCESS cfg_LINK_ACCESS
     config_file=
     start_dir=${T3_SETUP_CWD:-$PWD}
     case "${CONFIG-}" in
@@ -32,7 +32,7 @@ read_config() {
         key=$(trim "${line%%=*}")
         value=$(trim "${line#*=}")
         case "$key" in
-            NAME|REPO|WORKSPACE|DOTFILES|DOTFILES_NIX|DOTFILES_SCRIPTS|T3_VERSION|BUILDER|GITHUB_AUTH|NETWORK_ALLOW|MCP_HOSTNAME|MCP_LOCAL_PORT|MCP_ACCESS)
+            NAME|REPO|WORKSPACE|DOTFILES|DOTFILES_NIX|DOTFILES_SCRIPTS|T3_VERSION|BUILDER|GITHUB_AUTH|NETWORK_ALLOW|MCP_HOSTNAME|MCP_LOCAL_PORT|MCP_ACCESS|LINK_ACCESS)
                 export "cfg_$key=$value"
                 ;;
             *) fail "$config_file:$number: Unknown setting: $key" ;;
@@ -47,8 +47,9 @@ load_settings() {
     APPLY=${APPLY-0}
     NETWORK_ALLOW=${NETWORK_ALLOW-${cfg_NETWORK_ALLOW-}}
     MCP_HOSTNAME=${MCP_HOSTNAME-${cfg_MCP_HOSTNAME-}}
-    MCP_LOCAL_PORT=${MCP_LOCAL_PORT-${cfg_MCP_LOCAL_PORT-13773}}
+    MCP_LOCAL_PORT=${MCP_LOCAL_PORT-${cfg_MCP_LOCAL_PORT-}}
     MCP_ACCESS=${MCP_ACCESS-${cfg_MCP_ACCESS-read-only}}
+    LINK_ACCESS=${LINK_ACCESS-${cfg_LINK_ACCESS-auto}}
 
     case "$action" in
         setup)

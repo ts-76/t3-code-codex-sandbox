@@ -10,48 +10,9 @@ Run Codex in a Docker Sandbox and connect to it over SSH from T3 Code on your Ma
 | Sandbox name | `t3-code-codex` |
 | SSH host for T3 Code | `t3-code-codex.sbx` |
 
-## Store your settings in a file
-
-If you cloned this repository, copy the [example configuration](sandbox.conf.example) and edit it before running Make.
-
-```sh
-cp sandbox.conf.example sandbox.local.conf
-make status
-```
-
-Both Make and `uvx` can read a settings file stored elsewhere.
-
-```sh
-make status CONFIG=/absolute/path/to/sandbox.conf
-
-uvx --from git+https://github.com/ts-76/t3-code-codex-sandbox.git \
-  t3-code-codex-setup status --config /absolute/path/to/sandbox.conf
-```
-
-By default, Make looks for `sandbox.local.conf` next to the Makefile, and `uvx` looks for it in the directory you run the command from. Use one `KEY=value` pair per line. Paths with spaces can be written as-is. Relative `WORKSPACE` paths are resolved from the settings file's directory. Start comment lines with `#`.
-
-Command-line values take precedence over the file. For example, use `make status NAME=another-sandbox` or `status --name another-sandbox` to switch targets. The example file includes the sandbox name, workspace, dotfiles, T3 Code version, GitHub authentication, network rules, and MCP settings.
-
-### Review network access before allowing it
-
-Set `NETWORK_ALLOW` to a comma-separated list of hostnames. The default port is `443`.
-
-```ini
-NETWORK_ALLOW=packages.example.com:443,cache.example.com:443
-```
-
-After creating the sandbox, run `network` to review the target sandbox and see which hosts are already allowed or would be added.
-
-```sh
-make network
-make network APPLY=1
-```
-
-With `uvx`, run `t3-code-codex-setup network --config /absolute/path/to/sandbox.conf` to preview the rules. Add `--apply` to allow the listed hosts. Use `sbx policy ls <name> --wide` to inspect existing rules and manage removal in Docker Sandboxes. If dotfiles setup stopped because a host was blocked, apply the network rule and run `resume`. [Docker network rules](https://docs.docker.com/reference/cli/sbx/policy/allow/network/)
-
 ## Create a sandbox
 
-You need Docker Sandboxes (tested with `sbx` v0.51.0), Docker Desktop and Buildx, GNU Make, and the T3 Code desktop app. Run `sbx login` to sign in to Docker Sandboxes the first time.
+You need Docker Sandboxes (tested with `sbx` v0.51.0), Docker Desktop and Buildx, and the T3 Code desktop app. Run `sbx login` to sign in to Docker Sandboxes the first time. GNU Make is required for the Make workflow.
 
 With [`uvx`](https://docs.astral.sh/uv/guides/tools/) installed, you can run setup from any directory.
 
@@ -76,7 +37,67 @@ Use `--name` to choose a sandbox name. Pass `--skip-github-auth` to sign in to G
 
 If **GitHub repository** shows **Setup Required**, select your SSH environment in **Settings → Source control & issues** and click **Rescan**. [Docker's connection guide](https://docs.docker.com/ai/sandboxes/integrations/t3-code/) · [T3 Code's GitHub authentication guide](https://github.com/pingdotgg/t3code/blob/v0.1.11/docs/user/source-control.md#github)
 
-## Connect an external agent over MCP
+## Store your settings in a file
+
+If you cloned this repository, copy the [example configuration](sandbox.conf.example) and edit it before running Make.
+
+```sh
+cp sandbox.conf.example sandbox.local.conf
+make status
+```
+
+Both Make and `uvx` can read a settings file stored elsewhere.
+
+```sh
+make status CONFIG=/absolute/path/to/sandbox.conf
+
+uvx --from git+https://github.com/ts-76/t3-code-codex-sandbox.git \
+  t3-code-codex-setup status --config /absolute/path/to/sandbox.conf
+```
+
+By default, Make looks for `sandbox.local.conf` next to the Makefile, and `uvx` looks for it in the directory you run the command from. Use one `KEY=value` pair per line. Paths with spaces can be written as-is. Relative `WORKSPACE` paths are resolved from the settings file's directory. Start comment lines with `#`.
+
+Command-line values take precedence over the file. For example, use `make status NAME=another-sandbox` or `status --name another-sandbox` to switch targets. With `uvx`, use `--github-auth` or `--skip-github-auth` to override the GitHub setting, and `--no-dotfiles-nix` or `--no-run-dotfiles-scripts` to turn off options enabled in the file.
+
+### Review network access before allowing it
+
+Set `NETWORK_ALLOW` to a comma-separated list of hostnames. The default port is `443`.
+
+```ini
+NETWORK_ALLOW=packages.example.com:443,cache.example.com:443
+```
+
+After creating the sandbox, run `network` to review the target sandbox and see which hosts are already allowed or would be added.
+
+```sh
+make network
+make network APPLY=1
+```
+
+With `uvx`, run `t3-code-codex-setup network --config /absolute/path/to/sandbox.conf` to preview the rules. Add `--apply` to allow the listed hosts. Use `sbx policy ls <name> --wide` to inspect existing rules and manage removal in Docker Sandboxes. If dotfiles setup stopped because a host was blocked, apply the network rule and run `resume`. [Docker network rules](https://docs.docker.com/reference/cli/sbx/policy/allow/network/)
+
+## Link the sandbox to T3 Code on your Mac
+
+Link the sandbox when agents on your Mac should work in it. Outside agents that reach your Mac through T3 Connect, such as hosted assistants, then reach the sandbox through the same link. Nothing is exposed to the internet. [T3 Code's linked environments guide](https://github.com/pingdotgg/t3code/blob/v0.1.11/docs/user/remote-access.md#link-another-environment) · [T3 Code's external agent guide](https://github.com/pingdotgg/t3code/blob/v0.1.11/docs/user/outside-agents.md#add-t3-code-to-an-assistant-app)
+
+Turn on **Linked environments** under **Settings → Labs** in T3 Code on your Mac. Run the command from your Mac's login session. It needs the T3 Code CLI (`t3`) on your Mac and Python 3.9 or later for the Make workflow.
+
+```sh
+make link-setup NAME=t3-code-codex
+
+uvx --from git+https://github.com/ts-76/t3-code-codex-sandbox.git \
+  t3-code-codex-setup link-setup --name t3-code-codex
+```
+
+`link-setup` forwards a fixed loopback port on your Mac (`13773` by default) to T3 Code in the sandbox over SSH. A LaunchAgent keeps the forward running while you are logged in, and the SSH session starts T3 Code inside the sandbox if its server stops. The command then links the sandbox to T3 Code on your Mac at that address with a five-minute pairing code. A link to the same sandbox at another address is replaced. The port the desktop app opens for its own SSH connection changes when the app restarts, so a link to it stops answering. Rerunning the command leaves a working link as it is.
+
+`LINK_ACCESS` (`--link-access`) sets the most that agents from your Mac may do in the sandbox. The default is `auto`. An agent never gets more in the sandbox than its own mode on your Mac. Set a distinct `MCP_LOCAL_PORT` (`--mcp-local-port`) if `13773` is busy or if you link multiple sandboxes.
+
+Run `make link-stop NAME=t3-code-codex` (or `link-stop --name t3-code-codex` with `uvx`) to remove the link and stop the SSH forward. Then revoke the link's session in the sandbox under **Settings → Sharing & access**. If you set up the public endpoint below, run `mcp-stop` first.
+
+## Optional: expose the sandbox's MCP endpoint publicly
+
+Use this only when an outside agent must reach the sandbox directly instead of through your Mac, for example when you do not use T3 Connect. It publishes the sandbox's MCP and sign-in paths on a hostname you own, so the sandbox becomes reachable from the internet.
 
 Install `cloudflared` on your Mac and run `cloudflared tunnel login` the first time. Choose an unused, dedicated MCP hostname in a DNS zone you manage with Cloudflare. Run setup from your Mac's login session with the name of an existing sandbox and your chosen hostname. [Cloudflare's tunnel setup guide](https://developers.cloudflare.com/tunnel/features/locally-managed-tunnels/create-local-tunnel/)
 
@@ -94,7 +115,7 @@ uvx --from git+https://github.com/ts-76/t3-code-codex-sandbox.git \
   t3-code-codex-setup mcp-setup --name t3-code-codex --mcp-hostname mcp.example.com
 ```
 
-`mcp-setup` connects to the selected sandbox over SSH and forwards a loopback port on your Mac to T3 Code. It creates a Cloudflare Tunnel and DNS record, verifies that the public URL reaches the same sandbox, and checks the OAuth responses. Only the paths needed for MCP and the approval screen are exposed through the tunnel. LaunchAgents run the SSH forward and tunnel while you are logged in on the Mac. The SSH session starts T3 Code inside the sandbox if its server stops.
+`mcp-setup` reuses the SSH forward from `link-setup`, or starts it if it is not running. It creates a Cloudflare Tunnel and DNS record, verifies that the public URL reaches the same sandbox, and checks the OAuth responses. It reports whether plain HTTP redirects to HTTPS or is rejected. Only the paths needed for MCP and the approval screen are exposed through the tunnel. A LaunchAgent runs the tunnel while you are logged in on the Mac.
 
 Add the MCP URL printed by setup, such as `https://mcp.example.com/mcp`, to your external client using OAuth and start signing in. Generate a sign-in code for the same sandbox and enter it on the approval screen in your browser. The code expires after five minutes. [T3 Code's external agent guide](https://github.com/pingdotgg/t3code/blob/v0.1.11/docs/user/outside-agents.md#approve-a-sign-in)
 
@@ -107,9 +128,9 @@ uvx --from git+https://github.com/ts-76/t3-code-codex-sandbox.git \
 
 Access defaults to read-only. To let an external client start threads in the sandbox and run without approval, issue a code with `make mcp-pair NAME=t3-code-codex MCP_ACCESS=full-access` (or `--mcp-access full-access` with `uvx`) and select **Full access** on the approval screen. Any host directory shared with the sandbox is within the agent's working scope. Revoke approved clients under **Settings → Sharing & access** in the target T3 Code environment.
 
-- Set `MCP_HOSTNAME=mcp.example.com` in `sandbox.local.conf` to omit the hostname on the command line. Set a distinct `MCP_LOCAL_PORT` (`--mcp-local-port`) if the default Mac port `13773` is busy or if you connect multiple sandboxes.
-- If DNS or TLS is still provisioning, give it time and rerun the same `mcp-setup` command. It reuses the tunnel. Generated configuration and logs are stored at `~/Library/Application Support/t3-code-codex-sandbox/mcp/<sandbox-name>/` on your Mac.
-- Run `make mcp-stop NAME=t3-code-codex` (or `mcp-stop --name t3-code-codex` with `uvx`) to stop serving the public endpoint. This stops the SSH forward and tunnel on the Mac. The Cloudflare DNS record and tunnel can be reused. To change the hostname or port, stop the service and run `mcp-setup` with the new value.
+- Set `MCP_HOSTNAME=mcp.example.com` in `sandbox.local.conf` to omit the hostname on the command line. The tunnel uses the same `MCP_LOCAL_PORT` as the link.
+- If DNS or TLS is still provisioning, give it time and rerun `mcp-setup`. Once settings have been saved, you can retry with just the sandbox name. The saved hostname, port, and tunnel are reused. Generated configuration and logs are stored at `~/Library/Application Support/t3-code-codex-sandbox/mcp/<sandbox-name>/` on your Mac.
+- Run `make mcp-stop NAME=t3-code-codex` (or `mcp-stop --name t3-code-codex` with `uvx`) to stop serving the public endpoint. This stops only the tunnel and keeps the SSH forward for the linked environment. The Cloudflare DNS record and named tunnel remain for reuse. To remove them, run `cloudflared tunnel delete <tunnel-id>` and delete the DNS record in Cloudflare. To change the hostname, stop the service and run `mcp-setup` with the new value.
 
 ## Check status and resume setup
 
@@ -117,7 +138,7 @@ Access defaults to read-only. To let an external client start threads in the san
 uvx --from git+https://github.com/ts-76/t3-code-codex-sandbox.git t3-code-codex-setup status --name t3-code-codex
 ```
 
-`status` shows the sandbox state, SSH hostname, working directory, and the Codex authentication method recorded by Docker Sandboxes. Add `--details` to see the T3 server and Codex CLI versions, GitHub CLI authentication, the dotfiles checkout, and the last dotfiles apply. Detailed checks start the sandbox if it is stopped.
+`status` shows the sandbox state, SSH hostname, working directory, and the Codex authentication method recorded by Docker Sandboxes. Add `--details` to see the T3 server and Codex CLI versions, GitHub CLI authentication, the dotfiles checkout, and the last dotfiles apply. For kit-managed links and MCP connections, the detailed check also reports the SSH forward, the link's state, and which public check failed or whether the route is reachable. Detailed checks start the sandbox if it is stopped.
 
 If `uvx` has cached an older version and misses a new command, add `--refresh` immediately after `uvx`.
 
@@ -152,7 +173,7 @@ Dotfiles are checked out to `~/dotfiles` inside the sandbox. If the repository r
 | Dotfiles in an existing sandbox | Run `dotfiles-update --name t3-code-codex` to fetch and apply them again. Add `--dotfiles-nix` if the templates need Nix. |
 | Kit installed at sandbox creation | Run `setup --name <new-name>` to create another sandbox. Save any work stored only inside the old sandbox before removing it. |
 
-`dotfiles-update` runs `git pull --ff-only` from the existing `~/dotfiles` checkout's `origin`. It stops before fetching or applying if the checkout has uncommitted changes. `dotfiles` reapplies the current checkout. Both commands can run while the sandbox is active. [Docker's guidance on reusing a sandbox](https://docs.docker.com/ai/sandboxes/customize/use-kits/#reuse-a-sandbox)
+`dotfiles-update` runs `git pull --ff-only` against the existing `~/dotfiles` checkout's `origin`. It stops before fetching or applying if the checkout has uncommitted changes. To reapply the current checkout, run `dotfiles` without specifying its source. Both commands can run while the sandbox is active. [Docker's guidance on reusing a sandbox](https://docs.docker.com/ai/sandboxes/customize/use-kits/#reuse-a-sandbox)
 
 ## Use Make
 
@@ -171,6 +192,8 @@ Pass the cloned kit directory to `-C`. Use an absolute path when running from an
 | Apply dotfiles | `dotfiles NAME=t3-code-codex DOTFILES=self DOTFILES_NIX=1` |
 | Update checked-out dotfiles | `dotfiles-update NAME=t3-code-codex DOTFILES_NIX=1` |
 | Review network access | `network NAME=t3-code-codex`. Add `APPLY=1` to add the rules. |
+| Link to T3 Code on your Mac | `link-setup NAME=t3-code-codex`. Add `LINK_ACCESS=approval-required` to narrow it. |
+| Remove the link | `link-stop NAME=t3-code-codex` |
 
 Run `make help` for setup options. Use `REPO=owner/repo` to clone a repository or `WORKSPACE=/absolute/path/to/project` to share a host directory. Other options include `GITHUB_AUTH=0`, `T3_VERSION=0.1.11`, and `DOTFILES_SCRIPTS=1`.
 

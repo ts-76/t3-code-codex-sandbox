@@ -16,6 +16,5 @@ t3-code-codex-setup = "t3_code_codex:main"
 packages = ["t3_code_codex"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"Makefile" = "t3_code_codex/Makefile"
 "scripts" = "t3_code_codex/scripts"
 "t3code-ssh" = "t3_code_codex/t3code-ssh"

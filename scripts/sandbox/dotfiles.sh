@@ -7,8 +7,7 @@ validate_source() {
         *) printf '%s\n' 'Set DOTFILES_SCRIPTS and DOTFILES_NIX to 0 or 1.' >&2; exit 1 ;;
     esac
     case "$1" in
-        '') [ "$4" != update ] || return 0 ;;
-        self) return 0 ;;
+        ''|self) return 0 ;;
         https://*)
             address=${1#https://}
             host=${address%%/*}
@@ -61,7 +60,7 @@ install_chezmoi() (
 )
 
 if [ "$1" = --validate ]; then
-    validate_source "$2" "$3" "$4" "$5"
+    validate_source "$2" "$3" "$4"
     exit 0
 fi
 
@@ -69,7 +68,7 @@ source=$1
 run_scripts=$2
 with_nix=$3
 mode=$4
-validate_source "$source" "$run_scripts" "$with_nix" "$mode"
+validate_source "$source" "$run_scripts" "$with_nix"
 if [ "$source" = self ]; then
     if ! account=$(gh api --hostname github.com user --jq .login) || [ -z "$account" ]; then
         printf '%s\n' 'Sign in to GitHub in this sandbox to use DOTFILES=self.' >&2
@@ -86,7 +85,11 @@ if [ -e "$directory" ] || [ -L "$directory" ]; then
     fi
     origin=$(git -C "$directory" config --local --get remote.origin.url) || origin=
     if [ -z "$source" ]; then
-        validate_source "$origin" "$run_scripts" "$with_nix" apply
+        if [ -z "$origin" ]; then
+            printf 'Dotfiles checkout at %s has no origin. Restore its Git remote and retry.\n' "$directory" >&2
+            exit 1
+        fi
+        validate_source "$origin" "$run_scripts" "$with_nix"
         source=$origin
     fi
     if [ "$origin" != "$source" ]; then
@@ -96,6 +99,10 @@ if [ -e "$directory" ] || [ -L "$directory" ]; then
 else
     if [ "$mode" = update ]; then
         printf 'No dotfiles checkout at %s. Run the dotfiles action first.\n' "$directory" >&2
+        exit 1
+    fi
+    if [ -z "$source" ]; then
+        printf '%s\n' 'No dotfiles checkout. Specify DOTFILES=self or a clone URL (uvx: --dotfiles).' >&2
         exit 1
     fi
     GIT_TERMINAL_PROMPT=0 git clone -- "$source" "$directory"

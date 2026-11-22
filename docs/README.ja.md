@@ -10,48 +10,9 @@ Mac の T3 Code から SSH で Docker Sandbox に接続し、サンドボック�
 | サンドボックス | `t3-code-codex` |
 | T3 Code に入力する SSH ホスト | `t3-code-codex.sbx` |
 
-## 自分の設定をファイルに置く
-
-手元にクローンして使う場合は、[設定例](../sandbox.conf.example) をコピーして編集します。
-
-```sh
-cp sandbox.conf.example sandbox.local.conf
-make status
-```
-
-別の場所に置いた設定ファイルも、Make と `uvx` の両方から読み込めます。
-
-```sh
-make status CONFIG=/absolute/path/to/sandbox.conf
-
-uvx --from git+https://github.com/ts-76/t3-code-codex-sandbox.git \
-  t3-code-codex-setup status --config /absolute/path/to/sandbox.conf
-```
-
-ファイルを指定しないときは、Make は Makefile を実行するディレクトリ、`uvx` は呼び出したディレクトリの `sandbox.local.conf` を探します。値は `KEY=value` で1行ずつ書きます。パスに空白があっても引用符は不要です。`WORKSPACE` に相対パスを書くと、設定ファイルと同じ場所が基準になります。コメントは `#` で始まる行に書きます。
-
-コマンドに渡した値が設定ファイルの値より優先されます。たとえば `make status NAME=another-sandbox` や `status --name another-sandbox` で対象を切り替えられます。設定例には、サンドボックス名、ワークスペース、dotfiles、T3 Code の版、GitHub 認証、通信先の項目があります。
-
-### 通信先を確認してから許可する
-
-設定ファイルの `NETWORK_ALLOW` にホスト名をカンマ区切りで書きます。ポート省略時は `443` です。
-
-```ini
-NETWORK_ALLOW=packages.example.com:443,cache.example.com:443
-```
-
-サンドボックス作成後、まず `network` で対象の名前、許可済みのホスト、追加するホストを確認します。
-
-```sh
-make network
-make network APPLY=1
-```
-
-`uvx` では `t3-code-codex-setup network --config /absolute/path/to/sandbox.conf` で確認し、追加する場合だけ `--apply` を付けます。設定済みの他のルールを外したいときは、`sbx policy ls <名前> --wide` で確認して Docker Sandboxes 側で変更します。dotfiles の取得が通信許可の前に止まった場合は、許可を適用したあとに `resume` で続行できます。[Docker の通信ルール](https://docs.docker.com/reference/cli/sbx/policy/allow/network/)
-
 ## 新規作成
 
-Docker Sandboxes（`sbx` v0.51.0 で確認）、Docker Desktop と Buildx、GNU Make、T3 Code デスクトップアプリが必要です。初回は `sbx login` で Docker Sandboxes にサインインします。
+Docker Sandboxes（`sbx` v0.51.0 で確認）、Docker Desktop と Buildx、T3 Code デスクトップアプリが必要です。初回は `sbx login` で Docker Sandboxes にサインインします。Make で実行する場合は GNU Make も必要です。
 
 [`uvx`](https://docs.astral.sh/uv/guides/tools/) があれば、任意のフォルダから実行できます。
 
@@ -76,7 +37,67 @@ uvx --from git+https://github.com/ts-76/t3-code-codex-sandbox.git t3-code-codex-
 
 **GitHub repository** に **Setup Required** が出る場合は、**Settings → Source control & issues** で SSH 環境を選び **Rescan** を実行します。[Docker の接続ガイド](https://docs.docker.com/ai/sandboxes/integrations/t3-code/)・[T3 Code の GitHub 認証ガイド](https://github.com/pingdotgg/t3code/blob/v0.1.11/docs/user/source-control.md#github)
 
-## 外部エージェントからサンドボックスに接続する
+## 自分の設定をファイルに置く
+
+手元にクローンして使う場合は、[設定例](../sandbox.conf.example) をコピーして編集します。
+
+```sh
+cp sandbox.conf.example sandbox.local.conf
+make status
+```
+
+別の場所に置いた設定ファイルも、Make と `uvx` の両方から読み込めます。
+
+```sh
+make status CONFIG=/absolute/path/to/sandbox.conf
+
+uvx --from git+https://github.com/ts-76/t3-code-codex-sandbox.git \
+  t3-code-codex-setup status --config /absolute/path/to/sandbox.conf
+```
+
+ファイルを指定しないときは、Make は Makefile を実行するディレクトリ、`uvx` は呼び出したディレクトリの `sandbox.local.conf` を探します。値は `KEY=value` で1行ずつ書きます。パスに空白があっても引用符は不要です。`WORKSPACE` に相対パスを書くと、設定ファイルと同じ場所が基準になります。コメントは `#` で始まる行に書きます。
+
+コマンドに渡した値が設定ファイルの値より優先されます。たとえば `make status NAME=another-sandbox` や `status --name another-sandbox` で対象を切り替えられます。`uvx` では `--github-auth` または `--skip-github-auth` で GitHub 認証の設定を上書きできます。設定ファイルで有効にした Nix のインストールや chezmoi スクリプトをその回だけ無効にするには、`--no-dotfiles-nix` または `--no-run-dotfiles-scripts` を指定します。
+
+### 通信先を確認してから許可する
+
+設定ファイルの `NETWORK_ALLOW` にホスト名をカンマ区切りで書きます。ポート省略時は `443` です。
+
+```ini
+NETWORK_ALLOW=packages.example.com:443,cache.example.com:443
+```
+
+サンドボックス作成後、まず `network` で対象の名前、許可済みのホスト、追加するホストを確認します。
+
+```sh
+make network
+make network APPLY=1
+```
+
+`uvx` では `t3-code-codex-setup network --config /absolute/path/to/sandbox.conf` で確認し、追加する場合だけ `--apply` を付けます。設定済みの他のルールを外したいときは、`sbx policy ls <名前> --wide` で確認して Docker Sandboxes 側で変更します。dotfiles の取得が通信許可の前に止まった場合は、許可を適用したあとに `resume` で続行できます。[Docker の通信ルール](https://docs.docker.com/reference/cli/sbx/policy/allow/network/)
+
+## Mac の T3 Code にサンドボックスをリンクする
+
+Mac のエージェントにサンドボックスで作業させる場合は、リンクでつなぎます。T3 Connect 経由で Mac に接続しているクラウドのアシスタントなどの外部エージェントも、同じリンクを通ってサンドボックスに届きます。インターネットには何も公開しません。[T3 Code の Linked environments ガイド](https://github.com/pingdotgg/t3code/blob/v0.1.11/docs/user/remote-access.md#link-another-environment)・[T3 Code の外部エージェント接続ガイド](https://github.com/pingdotgg/t3code/blob/v0.1.11/docs/user/outside-agents.md#add-t3-code-to-an-assistant-app)
+
+Mac の T3 Code で **Settings → Labs** の **Linked environments** を有効にします。コマンドは Mac のログインセッション内で実行します。Mac に T3 Code の CLI（`t3`）が必要です。Make を使う場合は Python 3.9 以降も必要です。
+
+```sh
+make link-setup NAME=t3-code-codex
+
+uvx --from git+https://github.com/ts-76/t3-code-codex-sandbox.git \
+  t3-code-codex-setup link-setup --name t3-code-codex
+```
+
+`link-setup` は、Mac の固定のループバックポート（既定は `13773`）からサンドボックス内の T3 Code へ SSH で転送します。転送は Mac のログイン中に LaunchAgent が動かし続けます。サンドボックス内の T3 が止まると、SSH セッションが T3 を起動します。続けて、5分間有効なペアリングコードで、そのアドレスのサンドボックスを Mac の T3 Code にリンクします。同じサンドボックスへのリンクが別のアドレスにある場合は張り替えます。デスクトップアプリが自分の SSH 接続のために開くポートはアプリの再起動で変わるため、そこへのリンクは応答しなくなります。動いているリンクは、再実行してもそのまま残します。
+
+`LINK_ACCESS`（`--link-access`）で、Mac のエージェントがサンドボックスでできることの上限を決めます。既定は `auto` です。エージェントがサンドボックスで持つ権限は、Mac での自分のモードを超えません。`13773` が使用中の場合や、複数のサンドボックスをリンクする場合は `MCP_LOCAL_PORT`（`--mcp-local-port`）を個別に指定します。
+
+リンクを外して SSH 転送を止めるときは `make link-stop NAME=t3-code-codex`（`uvx` では `link-stop --name t3-code-codex`）を実行します。そのあと、サンドボックスの **Settings → Sharing & access** でリンクのセッションを取り消します。下の公開設定をしている場合は、先に `mcp-stop` を実行します。
+
+## 任意：サンドボックスの MCP をインターネットに公開する
+
+Mac を経由せず、外部エージェントをサンドボックスに直接つなぐ必要がある場合だけ使います。たとえば T3 Connect を使わない場合です。手持ちのホスト名でサンドボックスの MCP とサインインの経路を公開するため、サンドボックスにインターネットから届くようになります。
 
 外部 MCP クライアントから接続する場合は、Mac に `cloudflared` を入れ、初回に `cloudflared tunnel login` を実行します。Cloudflare で DNS を管理しているドメインから、MCP 専用の空いているホスト名を選びます。Mac のログインセッション内で、作成済みのサンドボックス名とホスト名を指定します。[Cloudflare の設定ガイド](https://developers.cloudflare.com/tunnel/features/locally-managed-tunnels/create-local-tunnel/)
 
@@ -94,7 +115,7 @@ uvx --from git+https://github.com/ts-76/t3-code-codex-sandbox.git \
   t3-code-codex-setup mcp-setup --name t3-code-codex --mcp-hostname mcp.example.com
 ```
 
-`mcp-setup` は指定したサンドボックスに SSH で接続し、Mac のループバックポートから T3 Code に転送します。Cloudflare Tunnel と DNS レコードを作成し、公開 URL が同じサンドボックスを指していることと OAuth の応答を確認します。T3 Code の MCP と承認画面に必要な経路だけをトンネルに通します。SSH 転送とトンネルは Mac のログイン中に LaunchAgent で動作します。サンドボックス内の T3 が止まると、SSH セッションがサンドボックス内で T3 を起動します。
+`mcp-setup` は `link-setup` の SSH 転送を使います。転送が動いていなければ起動します。Cloudflare Tunnel と DNS レコードを作成し、公開 URL が同じサンドボックスを指していることと OAuth の応答を確認します。平文 HTTP が HTTPS に転送されるか、拒否されるかも表示します。T3 Code の MCP と承認画面に必要な経路だけをトンネルに通します。トンネルは Mac のログイン中に LaunchAgent で動作します。
 
 セットアップに表示された `https://mcp.example.com/mcp` を外部クライアントに OAuth 接続として追加し、サインインを開始します。同じサンドボックスの承認コードを発行し、ブラウザの承認画面に入力します。有効期限は5分です。[T3 Code の外部エージェント接続ガイド](https://github.com/pingdotgg/t3code/blob/v0.1.11/docs/user/outside-agents.md#approve-a-sign-in)
 
@@ -107,9 +128,9 @@ uvx --from git+https://github.com/ts-76/t3-code-codex-sandbox.git \
 
 既定は読み取り専用です。外部クライアントからこのサンドボックスでスレッドを作成し、承認なしで実行させる場合は、`make mcp-pair NAME=t3-code-codex MCP_ACCESS=full-access`（`uvx` では `--mcp-access full-access`）でコードを発行し、承認画面でも **Full access** を選びます。接続先のサンドボックスがホストのフォルダを共有している場合は、そのフォルダもエージェントの作業範囲に入ります。接続済みクライアントは T3 Code の対象環境の **Settings → Sharing & access** で取り消せます。
 
-- `sandbox.local.conf` に `MCP_HOSTNAME=mcp.example.com` を書くと、実行時にホスト名を省略できます。既定の Mac 側ポート `13773` が使用中の場合や、複数のサンドボックスをつなぐ場合は `MCP_LOCAL_PORT`（`--mcp-local-port`）を個別に指定します。
-- DNS や TLS の反映待ちで止まったら、時間を置いて同じ `mcp-setup` を実行します。作成したトンネルを再利用します。生成した設定とログは Mac の `~/Library/Application Support/t3-code-codex-sandbox/mcp/<サンドボックス名>/` にあります。
-- 公開を止めるときは `make mcp-stop NAME=t3-code-codex`（`uvx` では `mcp-stop --name t3-code-codex`）を実行します。Mac 側の転送とトンネルが停止し、Cloudflare 上の DNS レコードとトンネルは再利用できます。ホスト名やポートを切り替える場合は、停止後に新しい値で `mcp-setup` を実行します。
+- `sandbox.local.conf` に `MCP_HOSTNAME=mcp.example.com` を書くと、実行時にホスト名を省略できます。トンネルはリンクと同じ `MCP_LOCAL_PORT` を使います。
+- DNS や TLS の反映待ちで止まったら、時間を置いて `mcp-setup` を再実行します。設定が保存されたあとは、サンドボックス名だけで再試行でき、ホスト名・ポート・トンネルを再利用します。生成した設定とログは Mac の `~/Library/Application Support/t3-code-codex-sandbox/mcp/<サンドボックス名>/` にあります。
+- 公開を止めるときは `make mcp-stop NAME=t3-code-codex`（`uvx` では `mcp-stop --name t3-code-codex`）を実行します。止まるのはトンネルだけで、SSH 転送はリンクのために残ります。Cloudflare 上の DNS レコードと名前付きトンネルは再利用できるよう残ります。消す場合は `cloudflared tunnel delete <トンネル ID>` を実行し、Cloudflare で DNS レコードを削除します。ホスト名を切り替える場合は、停止後に新しい値で `mcp-setup` を実行します。
 
 ## 状態を確認する・途中から再開する
 
@@ -117,7 +138,7 @@ uvx --from git+https://github.com/ts-76/t3-code-codex-sandbox.git \
 uvx --from git+https://github.com/ts-76/t3-code-codex-sandbox.git t3-code-codex-setup status --name t3-code-codex
 ```
 
-`status` は、稼働状態、SSH ホスト、作業ディレクトリ、Docker Sandboxes が記録した Codex の認証方式を表示します。`--details` を付けると、サンドボックス内の T3 サーバーと Codex CLI の版、GitHub CLI の認証、dotfiles のチェックアウトと最終適用を確認できます。停止中の場合は `--details` の確認時に起動します。
+`status` は、稼働状態、SSH ホスト、作業ディレクトリ、Docker Sandboxes が記録した Codex の認証方式を表示します。`--details` を付けると、サンドボックス内の T3 サーバーと Codex CLI の版、GitHub CLI の認証、dotfiles のチェックアウトと最終適用を確認できます。キットで管理するリンクと MCP 接続については、SSH 転送とリンクの状態、公開経路に到達できたか、どの段階で失敗したかも表示します。停止中の場合は `--details` の確認時に起動します。
 
 以前 `uvx` で実行したことがあり、新しい操作が認識されない場合は、`uvx` の直後に `--refresh` を付けます。
 
@@ -152,7 +173,7 @@ dotfiles はサンドボックス内の `~/dotfiles` に置きます。ルート
 | 既存サンドボックスの dotfiles | `dotfiles-update --name t3-code-codex` で取得して再適用する。テンプレートに Nix が必要なら `--dotfiles-nix` も付ける。 |
 | 作成時に組み込むキット | `setup --name <新しい名前>` で別のサンドボックスを作る。元の環境を削除する前に、サンドボックス内だけにある作業を退避する。 |
 
-`dotfiles-update` は既存の `~/dotfiles` の `origin` から `git pull --ff-only` します。未コミットの変更があれば取得と適用の前に止まります。`dotfiles` は取得済みの内容を再適用します。これらの操作は既存のサンドボックスを停止せずに実行できます。[Docker のキット更新とデータ保持](https://docs.docker.com/ai/sandboxes/customize/use-kits/#reuse-a-sandbox)
+`dotfiles-update` は既存の `~/dotfiles` の `origin` から `git pull --ff-only` します。未コミットの変更があれば取得と適用の前に止まります。取得済みの内容を再適用するには、取得元を指定せずに `dotfiles` を実行します。これらの操作は既存のサンドボックスを停止せずに実行できます。[Docker のキット更新とデータ保持](https://docs.docker.com/ai/sandboxes/customize/use-kits/#reuse-a-sandbox)
 
 ## Make で使う
 
@@ -171,6 +192,8 @@ make -C ./t3-code-codex-sandbox setup
 | dotfiles を適用 | `dotfiles NAME=t3-code-codex DOTFILES=self DOTFILES_NIX=1` |
 | 取得済みの dotfiles を更新 | `dotfiles-update NAME=t3-code-codex DOTFILES_NIX=1` |
 | 通信許可の確認 | `network NAME=t3-code-codex`。ルールを追加するときだけ `APPLY=1` を指定。 |
+| Mac の T3 Code にリンク | `link-setup NAME=t3-code-codex`。権限を絞るときは `LINK_ACCESS=approval-required` を指定。 |
+| リンクを外す | `link-stop NAME=t3-code-codex` |
 
 作成時のオプションは `make help` で確認できます。`REPO=owner/repo` でクローンし、`WORKSPACE=/absolute/path/to/project` でホストのフォルダを共有します。`GITHUB_AUTH=0`、`T3_VERSION=0.1.11`、`DOTFILES_SCRIPTS=1` も指定できます。
 

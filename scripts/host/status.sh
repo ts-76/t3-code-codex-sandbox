@@ -18,7 +18,8 @@ show_status() {
     if [ "$DETAILS" = 1 ]; then
         run_sandbox_script status || return
         case "$NAME" in *[!A-Za-z0-9_-]*) return 0 ;; esac
-        if [ -f "$HOME/Library/Application Support/t3-code-codex-sandbox/mcp/$NAME/setup.json" ]; then
+        state="$HOME/Library/Application Support/t3-code-codex-sandbox/mcp/$NAME"
+        if [ -f "$state/forward.json" ] || [ -f "$state/setup.json" ]; then
             "${T3_SETUP_PYTHON:-python3}" ./scripts/host/mcp.py mcp-status "$NAME"
         fi
     fi

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Manage a macOS SSH forward and Cloudflare Tunnel for one sandbox."""
+"""Manage a macOS SSH forward, a T3 Code environment link, and an optional
+Cloudflare Tunnel for one sandbox."""
 
 from __future__ import annotations
 
@@ -23,6 +24,7 @@ import uuid
 
 
 T3_PORT = 3773
+DEFAULT_LOCAL_PORT = 13773
 ENVIRONMENT = "/.well-known/t3/environment"
 OAUTH_RESOURCE = "/.well-known/oauth-protected-resource/mcp"
 MCP_PATHS = (
@@ -89,12 +91,39 @@ class Route:
         }, indent=2).encode() + b"\n"
 
 
+@dataclass(frozen=True)
+class Forward:
+    port: int
+
+    @property
+    def local_url(self) -> str:
+        return f"http://127.0.0.1:{self.port}"
+
+
+def parse_port(value: str) -> int:
+    if not re.fullmatch(r"[0-9]{1,5}", value) or not 1024 <= int(value) <= 65535:
+        raise ValueError("Set MCP_LOCAL_PORT to an unprivileged port (1024–65535).")
+    return int(value)
+
+
+def t3_cli() -> str:
+    found = shutil.which("t3") or str(Path.home() / ".t3/bin/t3")
+    if not os.access(found, os.X_OK):
+        raise ValueError("Install the T3 Code CLI on the Mac (t3 on PATH or ~/.t3/bin/t3).")
+    return found
+
+
 def tunnel_id(cloudflared: str, sandbox: str, hostname: str) -> str:
     suffix = hashlib.sha256(f"{sandbox}\n{hostname}".encode()).hexdigest()[:16]
     name = f"t3-code-codex-mcp-{suffix}"
 
     def find():
-        result = json.loads(run(cloudflared, "tunnel", "list", "--name", name, "--output", "json", capture=True))
+        try:
+            result = json.loads(run(
+                cloudflared, "tunnel", "list", "--name", name, "--output", "json", capture=True,
+            ))
+        except subprocess.CalledProcessError:
+            raise ValueError("Could not list Cloudflare tunnels. Check cloudflared tunnel login and account access.") from None
         return next((str(uuid.UUID(t["id"])) for t in (result or []) if t["name"] == name), None)
 
     existing = find()
@@ -122,7 +151,7 @@ def wait_for(check, error: str):
             result = check()
             if result:
                 return result
-        except (subprocess.CalledProcessError, ValueError):
+        except (subprocess.SubprocessError, ValueError):
             pass
         if time.monotonic() >= deadline:
             raise ValueError(error)
@@ -139,6 +168,7 @@ class Services:
         self.agents = self.home / "Library/LaunchAgents"
         self.domain = f"gui/{os.getuid()}"
         self.record = self.state / "setup.json"
+        self.forward_record = self.state / "forward.json"
         self.config = self.state / "cloudflared.yml"
 
     @contextmanager
@@ -178,17 +208,35 @@ class Services:
     def route(self) -> Route | None:
         if not self.record.exists():
             return None
-        return Route(**json.loads(self.record.read_text()))
+        try:
+            return Route(**json.loads(self.record.read_text()))
+        except (TypeError, ValueError):
+            raise ValueError(f"Could not read the saved MCP settings at {self.record}.") from None
 
-    def local_environment(self, route: Route) -> str | None:
+    def forward(self) -> Forward | None:
+        if self.forward_record.exists():
+            try:
+                return Forward(**json.loads(self.forward_record.read_text()))
+            except (TypeError, ValueError):
+                raise ValueError(f"Could not read the saved forward settings at {self.forward_record}.") from None
+        # Setups from earlier versions recorded the forward port only with the tunnel.
+        route = self.route()
+        return Forward(route.port) if route else None
+
+    def stop_agent(self, kind: str):
+        if self.loaded(kind):
+            run("/bin/launchctl", "bootout", f"{self.domain}/{self.label(kind)}")
+        (self.agents / f"{self.label(kind)}.plist").unlink(missing_ok=True)
+
+    def local_environment(self, local_url: str) -> str | None:
         if not self.loaded("ssh"):
             return None
-        forwarded = get_json(route.local_url + ENVIRONMENT).get("environmentId")
+        forwarded = get_json(local_url + ENVIRONMENT).get("environmentId")
         direct = json.loads(run(
             "sbx", "exec", self.sandbox, "--", "curl", "-q", "--noproxy", "*", "-fsS",
-            "--max-time", "3", f"http://127.0.0.1:{T3_PORT}{ENVIRONMENT}", capture=True,
-        )).get("environmentId")
-        if forwarded and forwarded == direct:
+            "--max-time", "3", f"http://127.0.0.1:{T3_PORT}{ENVIRONMENT}", capture=True, timeout=8,
+        ))
+        if isinstance(direct, dict) and forwarded and forwarded == direct.get("environmentId"):
             return forwarded
         return None
 
@@ -202,29 +250,60 @@ class Services:
             and get_json(public + "/api/auth/session").get("authenticated") is False
         )
 
-    def setup(self, hostname: str, port_value: str):
-        hostname = normalize_hostname(hostname)
-        if not re.fullmatch(r"[0-9]{1,5}", port_value) or not 1024 <= int(port_value) <= 65535:
-            raise ValueError("Set MCP_LOCAL_PORT to an unprivileged port (1024–65535).")
-        port = int(port_value)
-        route = self.route()
-        if route is not None and (route.hostname, route.port) != (hostname, port):
-            raise ValueError("Run mcp-stop for this sandbox before changing its hostname or local port.")
+    def connection_problem(self, route: Route) -> str | None:
+        try:
+            sandbox_id = self.local_environment(route.local_url)
+        except (subprocess.SubprocessError, ValueError):
+            sandbox_id = None
+        if not sandbox_id:
+            return f"SSH forward unavailable or sandbox identity differs. Check {self.state / 'ssh.log'}."
+        if not self.loaded("tunnel"):
+            return f"Cloudflare Tunnel is not loaded. Check {self.state / 'tunnel.log'}."
+        try:
+            if self.online(route, sandbox_id):
+                return None
+        except (subprocess.SubprocessError, ValueError):
+            pass
+        return f"Public HTTPS or OAuth check failed. Check DNS, TLS and {self.state / 'tunnel.log'}."
 
-        cloudflared = shutil.which("cloudflared")
-        if not cloudflared:
-            raise ValueError("Install cloudflared on the Mac and run cloudflared tunnel login.")
+    def show_http_protection(self, route: Route):
+        try:
+            result = run(
+                "/usr/bin/curl", "-q", "--noproxy", "*", "-s", "--max-time", "3",
+                "-o", os.devnull, "--write-out", "%{http_code}\n%{redirect_url}",
+                f"http://{route.hostname}/mcp", capture=True,
+            )
+        except subprocess.CalledProcessError:
+            print("MCP HTTP: unreachable from this Mac. Verify HTTP is blocked or redirected on Cloudflare.")
+            return
+        code, _, redirect = result.partition("\n")
+        if code in {"301", "302", "307", "308"} and redirect == f"{route.public_url}/mcp":
+            print(f"MCP HTTP: redirects to HTTPS ({code})")
+        elif code in {"403", "404", "410"}:
+            print(f"MCP HTTP: rejected ({code})")
+        else:
+            print(f"MCP HTTP: HTTPS redirect not verified ({code}). Check Single Redirects for this hostname.")
+
+    def ensure_forward(self, port_value: str) -> tuple[Forward, str]:
+        saved = self.forward()
+        port = parse_port(port_value or str(saved.port if saved else DEFAULT_LOCAL_PORT))
+        if saved is not None and saved.port != port:
+            raise ValueError("Run mcp-stop and link-stop for this sandbox before changing MCP_LOCAL_PORT.")
         try:
             run("/bin/launchctl", "print", self.domain, quiet=True)
         except subprocess.CalledProcessError:
-            raise ValueError("Run mcp-setup in your macOS login session.") from None
+            raise ValueError("Run this command in your macOS login session.") from None
         if not self.loaded("ssh"):
             with socket.socket() as listener:
                 try:
                     listener.bind(("127.0.0.1", port))
                 except OSError:
                     raise ValueError(f"Mac port {port} is unavailable. Choose a free MCP_LOCAL_PORT.") from None
-        run("sbx", "inspect", self.sandbox, capture=True)
+        print(f"Forward: checking SSH access to {self.sandbox}.sbx", flush=True)
+        try:
+            run("sbx", "inspect", self.sandbox, capture=True)
+        except subprocess.CalledProcessError:
+            raise ValueError(f"Could not inspect {self.sandbox}. Run status to check the sandbox name and Docker login.") from None
         ssh_host = f"{self.sandbox}.sbx"
         ssh = [
             "/usr/bin/ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5",
@@ -234,16 +313,10 @@ class Services:
             run(*ssh, "command -v t3 && command -v curl", capture=True)
         except subprocess.CalledProcessError:
             raise ValueError(f"Check that SSH to {ssh_host} works and t3 and curl are on its PATH.") from None
-        if route is None:
-            route = Route(hostname, port, tunnel_id(cloudflared, self.sandbox, hostname))
-        credentials = self.home / ".cloudflared" / f"{route.tunnel}.json"
-        if not credentials.is_file():
-            raise ValueError(f"Restore the credentials file for this named tunnel: {credentials}")
-        private_write(self.record, json.dumps(asdict(route), indent=2).encode() + b"\n")
-        private_write(self.config, route.cloudflared_config(credentials))
-        tunnel = [cloudflared, "tunnel", "--config", str(self.config)]
-        run(*tunnel, "ingress", "validate")
+        forward = Forward(port)
+        private_write(self.forward_record, json.dumps(asdict(forward), indent=2).encode() + b"\n")
 
+        print("Forward: checking the local SSH forward", flush=True)
         script = Path(__file__).resolve().parents[1] / "sandbox" / "mcp-server.sh"
         self.start("ssh", [
             *ssh[:-1], "-tt", "-o", "ExitOnForwardFailure=yes",
@@ -252,19 +325,104 @@ class Services:
             f"sh -c {shlex.quote(script.read_text())}",
         ])
         sandbox_id = wait_for(
-            lambda: self.local_environment(route),
+            lambda: self.local_environment(forward.local_url),
             f"The SSH origin did not identify as {self.sandbox}. Check {self.state / 'ssh.log'}.",
         )
+        return forward, sandbox_id
+
+    def linked(self, cli: str, environment_id: str | None = None, url: str | None = None) -> list[dict]:
+        links = json.loads(run(cli, "environment", "list", "--json", capture=True) or "[]")
+        return [
+            link for link in links if isinstance(link, dict) and (
+                (environment_id is not None and link.get("environmentId") == environment_id)
+                or (url is not None and url in (link.get("urls") or []))
+            )
+        ]
+
+    def link_setup(self, port_value: str, access: str):
+        if access not in ACCESS_MODES:
+            raise ValueError(f"Set LINK_ACCESS to one of: {', '.join(sorted(ACCESS_MODES))}.")
+        cli = t3_cli()
+        forward, sandbox_id = self.ensure_forward(port_value)
+        existing = self.linked(cli, environment_id=sandbox_id)
+        if any(
+            forward.local_url in (link.get("urls") or []) and link.get("access") == access
+            and link.get("status") == "reachable" for link in existing
+        ):
+            print(f"\nSandbox: {self.sandbox}\nLinked environment: {forward.local_url} ({access}, reachable)")
+            return
+        for link in existing:
+            # A link to the same sandbox at another address, such as a desktop-managed SSH port, goes stale.
+            print(f"Link: replacing the link at {', '.join(link.get('urls') or [])}", flush=True)
+            run(cli, "environment", "unlink", sandbox_id, quiet=True)
+        issued = json.loads(run(
+            "sbx", "exec", self.sandbox, "--", "sh", "-c",
+            'exec t3 auth pairing create --base-dir "$HOME/.t3" "$@"',
+            "sh", "--ttl", "5m", "--label", "Mac environment link", "--json", capture=True,
+        ))
+        credential = issued.get("credential") if isinstance(issued, dict) else None
+        if not credential:
+            raise ValueError("The sandbox did not issue a pairing code.")
+        run(cli, "environment", "link", forward.local_url, "--pairing-code", credential, "--access", access)
+        wait_for(
+            lambda: any(link.get("status") == "reachable" for link in self.linked(cli, environment_id=sandbox_id)),
+            "The link was created but the sandbox is not reachable from T3 Code yet. Run status with details.",
+        )
+        print(f"\nSandbox: {self.sandbox}\nLinked environment: {forward.local_url} ({access}, reachable)")
+        print("Agents on this Mac, and outside agents that reach it through T3 Connect, can now work in the sandbox.")
+
+    def link_stop(self):
+        if self.record.exists():
+            raise ValueError("Run mcp-stop first. The public tunnel uses this SSH forward.")
+        forward = self.forward()
+        if forward is None and not self.loaded("ssh"):
+            print(f"Forward: none for {self.sandbox}.")
+            return
+        if forward is not None:
+            try:
+                cli = t3_cli()
+            except ValueError:
+                cli = None
+            for link in self.linked(cli, url=forward.local_url) if cli else []:
+                run(cli, "environment", "unlink", link["environmentId"], quiet=True)
+                print(f"Link: removed {link.get('label') or link['environmentId']} from T3 Code on this Mac.")
+        self.stop_agent("ssh")
+        self.forward_record.unlink(missing_ok=True)
+        print(f"Forward stopped for {self.sandbox}. Revoke the link's session in the sandbox under Settings → Sharing & access.")
+
+    def setup(self, hostname: str, port_value: str):
+        route = self.route()
+        hostname = normalize_hostname(hostname or (route.hostname if route else ""))
+        if route is not None and port_value and parse_port(port_value) != route.port:
+            raise ValueError("Run mcp-stop for this sandbox before changing its hostname or local port.")
+        if route is not None and route.hostname != hostname:
+            raise ValueError("Run mcp-stop for this sandbox before changing its hostname or local port.")
+        cloudflared = shutil.which("cloudflared")
+        if not cloudflared:
+            raise ValueError("Install cloudflared on the Mac and run cloudflared tunnel login.")
+        forward, sandbox_id = self.ensure_forward(port_value or (str(route.port) if route else ""))
+
+        if route is None:
+            route = Route(hostname, forward.port, tunnel_id(cloudflared, self.sandbox, hostname))
+        credentials = self.home / ".cloudflared" / f"{route.tunnel}.json"
+        if not credentials.is_file():
+            raise ValueError(f"Restore the credentials file for this named tunnel: {credentials}")
+        private_write(self.record, json.dumps(asdict(route), indent=2).encode() + b"\n")
+        private_write(self.config, route.cloudflared_config(credentials))
+        tunnel = [cloudflared, "tunnel", "--config", str(self.config)]
+        run(*tunnel, "ingress", "validate")
 
         # Preserve existing DNS records even if the caller has this CLI flag set in their environment.
         env = {key: value for key, value in os.environ.items() if key != "TUNNEL_FORCE_PROVISIONING_DNS"}
         run(*tunnel, "route", "dns", route.tunnel, route.hostname, env=env)
         self.start("tunnel", [*tunnel, "--no-autoupdate", "run", route.tunnel])
+        print("MCP setup: checking public HTTPS and OAuth", flush=True)
         wait_for(
             lambda: self.online(route, sandbox_id),
             f"The public MCP checks are pending or failed. Check DNS, TLS and {self.state / 'tunnel.log'}, then rerun mcp-setup.",
         )
         print(f"\nSandbox: {self.sandbox}\nMCP URL: {route.public_url}/mcp\nAuthentication: OAuth")
+        self.show_http_protection(route)
         print("Add the URL to your MCP client, then run mcp-pair for a sign-in code.")
 
     def pair(self, access: str):
@@ -273,9 +431,9 @@ class Services:
         route = self.route()
         if route is None:
             raise ValueError("Run mcp-setup for this sandbox first.")
-        sandbox_id = self.local_environment(route)
-        if not sandbox_id or not self.online(route, sandbox_id):
-            raise ValueError("The MCP endpoint is unavailable. Rerun mcp-setup before issuing a code.")
+        problem = self.connection_problem(route)
+        if problem:
+            raise ValueError(f"{problem} Rerun mcp-setup before issuing a code.")
         scopes = ["--scope", "orchestration:read"]
         if access != "read-only":
             scopes += ["--scope", "orchestration:operate"]
@@ -289,38 +447,57 @@ class Services:
         )
 
     def stop(self):
-        if self.route() is None:
+        route = self.route()
+        if route is None:
             print(f"MCP setup: none for {self.sandbox}.")
             return
-        for kind in ("tunnel", "ssh"):
-            if self.loaded(kind):
-                run("/bin/launchctl", "bootout", f"{self.domain}/{self.label(kind)}")
-            (self.agents / f"{self.label(kind)}.plist").unlink(missing_ok=True)
+        if not self.forward_record.exists():
+            private_write(self.forward_record, json.dumps(asdict(Forward(route.port)), indent=2).encode() + b"\n")
+        self.stop_agent("tunnel")
         self.record.unlink()
         self.config.unlink(missing_ok=True)
-        print(f"MCP forwarding stopped for {self.sandbox}. Cloudflare DNS and the named tunnel remain available for reuse.")
+        print(f"MCP tunnel stopped for {self.sandbox}. Cloudflare DNS and the named tunnel remain available for reuse.")
+        print(f"The SSH forward at {route.local_url} keeps serving linked environments. Run link-stop to remove it.")
 
     def status(self):
+        forward = self.forward()
+        if forward is None:
+            return
+        print(f"Local forward: {forward.local_url} ({'running' if self.loaded('ssh') else 'stopped'})")
+        try:
+            links = self.linked(t3_cli(), url=forward.local_url)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            links = None
+        if links is None:
+            print("Linked environment: unknown (T3 Code CLI unavailable)")
+        elif not links:
+            print("Linked environment: none (run link-setup)")
+        for link in links or []:
+            print(f"Linked environment: {link.get('status')} ({link.get('access')})")
         route = self.route()
         if route is None:
             return
         print(f"MCP URL: {route.public_url}/mcp")
-        try:
-            sandbox_id = self.local_environment(route)
-            ready = bool(sandbox_id and self.online(route, sandbox_id))
-        except (subprocess.CalledProcessError, ValueError):
-            ready = False
-        print(f"MCP connectivity: {'verified' if ready else 'unavailable (check with mcp-setup)'}")
+        problem = self.connection_problem(route)
+        if problem:
+            print(f"MCP connectivity: {problem}")
+        else:
+            print("MCP connectivity: verified")
+            self.show_http_protection(route)
 
 
 def main() -> int:
     action, sandbox, *settings = sys.argv[1:]
     try:
         if sys.platform != "darwin":
-            raise ValueError("MCP tunnel setup is available on macOS.")
+            raise ValueError("Linked environments and the MCP tunnel are managed on macOS.")
         service = Services(sandbox)
         with service.locked():
-            if action == "mcp-setup":
+            if action == "link-setup":
+                service.link_setup(settings[1], settings[3] if len(settings) > 3 else "auto")
+            elif action == "link-stop":
+                service.link_stop()
+            elif action == "mcp-setup":
                 service.setup(*settings[:2])
             elif action == "mcp-pair":
                 service.pair(settings[2])

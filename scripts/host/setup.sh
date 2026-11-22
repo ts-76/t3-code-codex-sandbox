@@ -25,16 +25,16 @@ show_retry() (
         printf '%s' 'uvx --from git+https://github.com/ts-76/t3-code-codex-sandbox.git t3-code-codex-setup resume --name '
         shell_quote "$NAME"
         [ -z "$config_file" ] || { printf ' --config '; shell_quote "$config_file"; }
-        [ -z "$REPO" ] || { printf ' --repo '; shell_quote "$REPO"; }
-        [ -z "$DOTFILES" ] || { printf ' --dotfiles '; shell_quote "$DOTFILES"; }
-        [ "$GITHUB_AUTH" = 1 ] || printf ' --skip-github-auth'
-        [ "$DOTFILES_NIX" = 0 ] || printf ' --dotfiles-nix'
-        [ "$DOTFILES_SCRIPTS" = 0 ] || printf ' --run-dotfiles-scripts'
+        [ -z "$REPO${cfg_REPO-}" ] || { printf ' --repo '; shell_quote "$REPO"; }
+        [ -z "$DOTFILES${cfg_DOTFILES-}" ] || { printf ' --dotfiles '; shell_quote "$DOTFILES"; }
+        if [ "$GITHUB_AUTH" = 0 ]; then printf ' --skip-github-auth'; else printf ' --github-auth'; fi
+        if [ "$DOTFILES_NIX" = 1 ]; then printf ' --dotfiles-nix'; else printf ' --no-dotfiles-nix'; fi
+        if [ "$DOTFILES_SCRIPTS" = 1 ]; then printf ' --run-dotfiles-scripts'; else printf ' --no-run-dotfiles-scripts'; fi
     else
         set -- "NAME=$NAME" "GITHUB_AUTH=$GITHUB_AUTH"
         [ -z "$config_file" ] || set -- "$@" "CONFIG=$config_file"
-        [ -z "$REPO" ] || set -- "$@" "REPO=$REPO"
-        [ -z "$DOTFILES" ] || set -- "$@" "DOTFILES=$DOTFILES"
+        [ -z "$REPO${cfg_REPO-}" ] || set -- "$@" "REPO=$REPO"
+        [ -z "$DOTFILES${cfg_DOTFILES-}" ] || set -- "$@" "DOTFILES=$DOTFILES"
         [ "$DOTFILES_NIX" = 0 ] || set -- "$@" "DOTFILES_NIX=$DOTFILES_NIX"
         [ "$DOTFILES_SCRIPTS" = 0 ] || set -- "$@" "DOTFILES_SCRIPTS=$DOTFILES_SCRIPTS"
 
@@ -59,7 +59,7 @@ configure_github() {
 }
 
 validate_dotfiles() {
-    sh ./scripts/sandbox/dotfiles.sh --validate "$DOTFILES" "$DOTFILES_SCRIPTS" "$DOTFILES_NIX" "$1"
+    sh ./scripts/sandbox/dotfiles.sh --validate "$DOTFILES" "$DOTFILES_SCRIPTS" "$DOTFILES_NIX"
 }
 
 configure_dotfiles() (
@@ -133,7 +133,7 @@ prepare_docker() {
 
 action=$1
 load_settings
-require_command sbx
+case "$action" in mcp-stop|link-stop) ;; *) require_command sbx ;; esac
 [ -n "$NAME" ] || fail 'Set NAME to the sandbox name.'
 
 case "$action" in
@@ -141,15 +141,16 @@ case "$action" in
     github-auth) configure_github; exit ;;
     status) show_status; exit ;;
     network) configure_network; exit ;;
-    mcp-setup|mcp-pair|mcp-stop)
+    link-setup|link-stop|mcp-setup|mcp-pair|mcp-stop)
         python=${T3_SETUP_PYTHON:-python3}
         require_command "$python"
-        exec "$python" ./scripts/host/mcp.py "$action" "$NAME" "$MCP_HOSTNAME" "$MCP_LOCAL_PORT" "$MCP_ACCESS"
+        exec "$python" ./scripts/host/mcp.py "$action" "$NAME" \
+            "$MCP_HOSTNAME" "$MCP_LOCAL_PORT" "$MCP_ACCESS" "$LINK_ACCESS"
         ;;
     dotfiles|dotfiles-update)
         mode=apply
         [ "$action" != dotfiles-update ] || mode=update
-        validate_dotfiles "$mode"
+        validate_dotfiles
         configure_dotfiles "$mode"
         exit
         ;;
@@ -159,7 +160,7 @@ esac
 
 case "$GITHUB_AUTH" in 0|1) ;; *) fail 'Set GITHUB_AUTH to 0 or 1.' ;; esac
 if [ -n "$DOTFILES" ]; then
-    validate_dotfiles apply
+    validate_dotfiles
 elif [ "$DOTFILES_SCRIPTS:$DOTFILES_NIX" != 0:0 ]; then
     fail 'Set DOTFILES when using DOTFILES_SCRIPTS or DOTFILES_NIX.'
 fi
