@@ -91,11 +91,11 @@ uvx --from git+https://github.com/ts-76/t3-code-codex-sandbox.git \
   t3-code-codex-setup link-setup --name t3-code-codex
 ```
 
-`link-setup` は、Mac の固定のループバックポート（既定は `13773`）からサンドボックス内の T3 Code へ SSH で転送します。転送は Mac のログイン中に LaunchAgent が動かし続けます。サンドボックス内の T3 が止まると、SSH セッションが T3 を起動します。続けて、5分間有効なペアリングコードで、そのアドレスのサンドボックスを Mac の T3 Code にリンクします。同じサンドボックスへのリンクが別のアドレスにある場合は張り替えます。デスクトップアプリが自分の SSH 接続のために開くポートはアプリの再起動で変わるため、そこへのリンクは応答しなくなります。動いているリンクは、再実行してもそのまま残します。
+`link-setup` は、Mac の固定のループバックポート（既定は `13773`）からサンドボックス内の T3 Code へ SSH で転送します。転送は Mac のログイン中に LaunchAgent が動かし続けます。サンドボックス内の T3 が止まると、SSH セッションが T3 を起動します。続けて、5分間有効なペアリングコードで、そのアドレスのサンドボックスを Mac の T3 Code にリンクします。同じサンドボックスへのリンクが別のアドレスにある場合は張り替えます。デスクトップアプリが自分の SSH 接続のために開くポートはアプリの再起動で変わるため、そこへのリンクは応答しなくなります。動いているリンクは、再実行してもそのまま残します。自分で作ったリンクを張り替えるときは、サンドボックスに残る古いリンクのセッションも取り消します。
 
-`LINK_ACCESS`（`--link-access`）で、Mac のエージェントがサンドボックスでできることの上限を決めます。既定は `auto` です。エージェントがサンドボックスで持つ権限は、Mac での自分のモードを超えません。`13773` が使用中の場合や、複数のサンドボックスをリンクする場合は `MCP_LOCAL_PORT`（`--mcp-local-port`）を個別に指定します。
+`LINK_ACCESS`（`--link-access`）で、Mac のエージェントがサンドボックスでできることの上限を決めます。指定しなければ、再実行しても今のリンクの上限を引き継ぎます。新しくリンクする場合は `auto` になります。上限を変えるときは、`--link-access full-access` のように改めて指定します。エージェントがサンドボックスで持つ権限は、Mac での自分のモードを超えません。`13773` が使用中の場合や、複数のサンドボックスをリンクする場合は `MCP_LOCAL_PORT`（`--mcp-local-port`）を個別に指定します。
 
-リンクを外して SSH 転送を止めるときは `make link-stop NAME=t3-code-codex`（`uvx` では `link-stop --name t3-code-codex`）を実行します。そのあと、サンドボックスの **Settings → Sharing & access** でリンクのセッションを取り消します。下の公開設定をしている場合は、先に `mcp-stop` を実行します。
+リンクを外すときは `make link-stop NAME=t3-code-codex`（`uvx` では `link-stop --name t3-code-codex`）を実行します。リンクを外し、サンドボックスにあるリンクのセッションを取り消してから、SSH 転送を止めます。以前の版のキットで作ったリンクの場合は、サンドボックスの **Settings → Sharing & access** でセッションを取り消してください。下の公開設定をしている場合は、先に `mcp-stop` を実行します。
 
 ## 任意：サンドボックスの MCP をインターネットに公開する
 
@@ -166,6 +166,7 @@ dotfiles はサンドボックス内の `~/dotfiles` に置きます。ルート
 
 - **Nix を使うテンプレート**には `--dotfiles-nix` を付けます。`ts-76/dotfiles` では Devbox の設定生成に必要です。
 - **chezmoi の導入スクリプト**も実行する場合は `--run-dotfiles-scripts` を付けます。Devbox パッケージの導入にはサンドボックス内の Devbox、Nix、配布先へのアクセスが必要です。接続エラーは `sbx policy log t3-code-codex --limit 20` で確認できます。[Docker のネットワーク診断](https://docs.docker.com/ai/governance/troubleshooting/)
+- サンドボックスのディスクは 20GB で、Devbox のパッケージ一式で埋まることがあります。作成時に `--nix-volume 30g`（`NIX_VOLUME=30g`）を付けると、`/nix` にその大きさの専用ディスクが付きます。この容量は Mac のディスクを使うので、Mac 側にも空きを残してください。`sbx` v0.51.0 ではサンドボックスを削除するとこのディスクも消えるため、作り直すとパッケージはダウンロードし直しになります。使用量は `status --details` で確認できます。[Docker の volume 機能](https://github.com/docker/sandbox-kit-spec/blob/main/docs/spec/capabilities/com.docker.sandbox/volume%401.md)
 
 ## 更新する
 
@@ -209,6 +210,7 @@ Docker も T3 Code 用のキットを公開していますが、2026年11月時�
 | --- | --- |
 | `sandbox.conf.example` | 個人設定のテンプレート |
 | `t3code-ssh/` | Docker Sandboxes のキット定義 |
+| `nix-volume/` | `/nix` に専用ディスクを付ける任意のキット |
 | `scripts/host/` | ホストで実行する作成・再開、設定、通信許可、診断 |
 | `scripts/sandbox/` | サンドボックス内で実行するクローン、dotfiles、診断 |
 | `t3_code_codex/` | `uvx` から使う Python の入口 |
@@ -216,6 +218,7 @@ Docker も T3 Code 用のキットを公開していますが、2026年11月時�
 
 ```sh
 sbx kit validate ./t3code-ssh
+sbx kit validate ./nix-volume
 python3 -B -m unittest discover -s tests
 ```
 

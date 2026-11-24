@@ -1,0 +1,19 @@
+# syntax=docker/sandbox-kit:3
+schemaVersion: "3"
+kind: mixin
+displayName: Nix store volume
+description: Gives /nix its own block storage, so a Nix store does not fill the sandbox's root disk and survives re-creating the sandbox under the same name.
+version: "1.0.0"
+
+args:
+  size:
+    default: "30g"
+    pattern: '^[1-9][0-9]*[gG]$'
+    description: Capacity reserved for /nix, in gigabytes (for example 30g).
+
+capabilities:
+  - type: com.docker.sandbox/volume@1
+    config:
+      path: /nix
+      size: "${{ kit.args.size }}"
+      mode: "0755"

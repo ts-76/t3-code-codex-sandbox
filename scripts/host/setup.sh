@@ -168,7 +168,7 @@ fi
 mounted_workspace=
 workspace=/home/agent/workspace
 if [ "$action" = resume ]; then
-    [ -z "$WORKSPACE$T3_VERSION$CODEX_KIT" ] || fail 'WORKSPACE, T3_VERSION and CODEX_KIT require setup.'
+    [ -z "$WORKSPACE$T3_VERSION$CODEX_KIT$NIX_VOLUME" ] || fail 'WORKSPACE, T3_VERSION, CODEX_KIT and NIX_VOLUME require setup.'
     inspection=$(LC_ALL=C sbx inspect "$NAME")
     workspace=$(inspection_field 'Working directory')
     [ -n "$workspace" ] || fail 'Could not determine the existing sandbox working directory.'
@@ -201,10 +201,12 @@ if [ "$action" = setup ]; then
         ''|codex) ;;
         -*|*[!A-Za-z0-9._/:@-]*) fail 'Set CODEX_KIT to codex or a Codex kit reference such as docker.io/sbx/codex:0.171.0.' ;;
     esac
+    printf '%s\n' "$NIX_VOLUME" | grep -Eqx '([1-9][0-9]*[gG])?' ||
+        fail 'Set NIX_VOLUME to a size in gigabytes, such as 30g.'
     sandboxes=$(sbx ls --quiet)
     if printf '%s\n' "$sandboxes" | grep -Fqx -- "$NAME"; then
         printf 'Sandbox %s already exists. Connect to %s.sbx or choose another NAME.\n' "$NAME" "$NAME" >&2
-        if [ -z "$WORKSPACE$T3_VERSION$CODEX_KIT" ]; then show_retry; fi
+        if [ -z "$WORKSPACE$T3_VERSION$CODEX_KIT$NIX_VOLUME" ]; then show_retry; fi
         exit 1
     fi
     require_command docker
@@ -222,6 +224,7 @@ if [ "$action" = setup ]; then
     set -- "${CODEX_KIT:-codex}"
     [ -z "$mounted_workspace" ] || set -- "$@" "$mounted_workspace"
     [ -z "$T3_VERSION" ] || set -- --kit-arg "t3code-ssh.version=$T3_VERSION" "$@"
+    [ -z "$NIX_VOLUME" ] || set -- --kit ./nix-volume --kit-arg "nix-volume.size=$NIX_VOLUME" "$@"
     github=$(sbx secret ls --global --service github --quiet &&
         sbx secret ls --sandbox "$NAME" --service github --quiet)
     [ -n "$github" ] || set -- --env GH_TOKEN= --env GITHUB_TOKEN= "$@"

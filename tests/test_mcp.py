@@ -99,12 +99,10 @@ class McpTest(unittest.TestCase):
             self.services.link_stop()
         run.assert_not_called()
 
-    def test_link_setup_replaces_a_stale_link_to_the_same_sandbox(self):
-        forward = mcp.Forward(13773)
-        links = [{
-            "environmentId": "test-sandbox-id", "urls": ["http://127.0.0.1:64096"],
-            "access": "auto", "status": "unreachable",
-        }]
+    def fake_link_commands(self, links, sessions):
+        """Simulate the Mac's T3 CLI and the sandbox's session list for link-setup."""
+        clock = iter(f"2026-11-22T0{hour}:00:00.000Z" for hour in range(1, 10))
+        numbers = iter(range(1, 10))
 
         def fake_run(*args, **options):
             if args[1:3] == ("environment", "list"):
@@ -112,31 +110,127 @@ class McpTest(unittest.TestCase):
             if args[1:3] == ("environment", "unlink"):
                 links.clear()
             if args[1:3] == ("environment", "link"):
+                linked_at = next(clock)
                 links.append({
-                    "environmentId": "test-sandbox-id", "urls": [args[3]],
+                    "environmentId": "test-sandbox-id", "urls": [args[3]], "linkedAt": linked_at,
                     "access": args[-1], "status": "reachable",
                 })
+                sessions.append({
+                    "sessionId": f"session-{next(numbers)}", "subject": "mcp-client",
+                    "issuedAt": linked_at.replace("00.000Z", "00.040Z"),
+                })
             if args[:2] == ("sbx", "exec"):
+                script = args[args.index("-c") + 1]
+                if "session list" in script:
+                    return json.dumps(sessions)
+                if "session revoke" in script:
+                    sessions[:] = [session for session in sessions if session["sessionId"] != args[-1]]
+                    return ""
                 return json.dumps({"credential": "PAIRCODE"})
             return ""
 
-        with (
+        return fake_run
+
+    def link_setup_patches(self, fake_run):
+        return (
             patch.object(mcp, "t3_cli", return_value="/test/t3"),
-            patch.object(self.services, "ensure_forward", return_value=(forward, "test-sandbox-id")),
-            patch.object(mcp, "run", side_effect=fake_run) as run,
-            redirect_stdout(StringIO()) as output,
-        ):
+            patch.object(self.services, "ensure_forward", return_value=(mcp.Forward(13773), "test-sandbox-id")),
+            patch.object(mcp, "run", side_effect=fake_run),
+            redirect_stdout(StringIO()),
+        )
+
+    def test_link_setup_replaces_a_stale_link_to_the_same_sandbox(self):
+        forward = mcp.Forward(13773)
+        links = [{
+            "environmentId": "test-sandbox-id", "urls": ["http://127.0.0.1:64096"],
+            "access": "auto", "status": "unreachable",
+        }]
+        cli, ensure, run_patch, out = self.link_setup_patches(self.fake_link_commands(links, []))
+        with cli, ensure, run_patch as run, out as output:
             self.services.link_setup("", "auto")
             commands = [call.args[1:3] for call in run.call_args_list if call.args[0] == "/test/t3"]
             self.assertIn(("environment", "unlink"), commands)
             link = next(call.args for call in run.call_args_list if call.args[1:3] == ("environment", "link"))
             self.assertEqual(link[3:], (forward.local_url, "--pairing-code", "PAIRCODE", "--access", "auto"))
             self.assertIn("reachable", output.getvalue())
+            self.assertIn("Settings → Sharing & access", output.getvalue())
             run.reset_mock()
             self.services.link_setup("", "auto")
             self.assertFalse(any(call.args[1:3] == ("environment", "link") for call in run.call_args_list))
         with self.assertRaisesRegex(ValueError, "LINK_ACCESS"):
             self.services.link_setup("", "everything")
+
+    def test_link_setup_revokes_the_session_of_the_link_it_replaces(self):
+        links, sessions = [], [{"sessionId": "desktop", "subject": "one-time-token", "issuedAt": "2026-11-20T00:00:00Z"}]
+        cli, ensure, run_patch, out = self.link_setup_patches(self.fake_link_commands(links, sessions))
+        with cli, ensure, run_patch, out:
+            self.services.link_setup("", "auto")
+            self.assertEqual(json.loads(self.services.link_record.read_text())["session"], "session-1")
+            self.services.link_setup("", "full-access")
+        self.assertEqual([session["sessionId"] for session in sessions], ["desktop", "session-2"])
+        self.assertEqual(links[0]["access"], "full-access")
+        self.assertEqual(json.loads(self.services.link_record.read_text())["session"], "session-2")
+
+    def test_link_setup_without_access_keeps_the_current_link_and_records_its_session(self):
+        links = [{
+            "environmentId": "test-sandbox-id", "urls": ["http://127.0.0.1:13773"],
+            "linkedAt": "2026-11-22T13:55:48.828Z", "access": "full-access", "status": "reachable",
+        }]
+        sessions = [
+            {"sessionId": "older", "subject": "mcp-client", "issuedAt": "2026-11-22T08:27:34.507Z"},
+            {"sessionId": "current", "subject": "mcp-client", "issuedAt": "2026-11-22T13:55:48.791Z"},
+        ]
+        cli, ensure, run_patch, out = self.link_setup_patches(self.fake_link_commands(links, sessions))
+        with cli, ensure, run_patch as run, out as output:
+            self.services.link_setup("", "")
+        self.assertFalse(any(call.args[1:3] == ("environment", "link") for call in run.call_args_list))
+        self.assertIn("(full-access, reachable)", output.getvalue())
+        self.assertEqual(json.loads(self.services.link_record.read_text())["session"], "current")
+
+    def test_link_setup_links_again_when_the_recorded_session_is_gone(self):
+        links, sessions = [], []
+        cli, ensure, run_patch, out = self.link_setup_patches(self.fake_link_commands(links, sessions))
+        with cli, ensure, run_patch as run, out as output:
+            self.services.link_setup("", "full-access")
+            sessions.clear()
+            run.reset_mock()
+            self.services.link_setup("", "")
+        self.assertIn("Linking again", output.getvalue())
+        self.assertTrue(any(call.args[1:3] == ("environment", "link") for call in run.call_args_list))
+        self.assertEqual(links[0]["access"], "full-access")
+        self.assertEqual(json.loads(self.services.link_record.read_text())["session"], "session-2")
+
+    def test_link_setup_links_again_when_an_unrecorded_link_has_no_session(self):
+        links = [{
+            "environmentId": "test-sandbox-id", "urls": ["http://127.0.0.1:13773"],
+            "linkedAt": "2026-11-22T13:55:48.828Z", "access": "full-access", "status": "reachable",
+        }]
+        sessions = [{"sessionId": "desktop", "subject": "one-time-token", "issuedAt": "2026-11-20T00:00:00Z"}]
+        cli, ensure, run_patch, out = self.link_setup_patches(self.fake_link_commands(links, sessions))
+        with cli, ensure, run_patch as run, out as output:
+            self.services.link_setup("", "")
+        self.assertIn("Linking again", output.getvalue())
+        self.assertTrue(any(call.args[1:3] == ("environment", "link") for call in run.call_args_list))
+        self.assertEqual(links[0]["access"], "full-access")
+
+    def test_link_stop_revokes_the_recorded_session(self):
+        links, sessions = [], []
+        fake_run = self.fake_link_commands(links, sessions)
+        cli, ensure, run_patch, out = self.link_setup_patches(fake_run)
+        with cli, ensure, run_patch, out:
+            self.services.link_setup("", "auto")
+        self.services.forward_record.write_text(json.dumps({"port": 13773}))
+        with (
+            patch.object(mcp, "t3_cli", return_value="/test/t3"),
+            patch.object(mcp, "run", side_effect=fake_run),
+            patch.object(self.services, "stop_agent"),
+            patch.object(self.services, "loaded", return_value=True),
+            redirect_stdout(StringIO()) as output,
+        ):
+            self.services.link_stop()
+        self.assertEqual((links, sessions), ([], []))
+        self.assertFalse(self.services.link_record.exists())
+        self.assertNotIn("Sharing & access", output.getvalue())
 
     def test_public_check_requires_the_sandbox_and_its_oauth_resource(self):
         responses = {

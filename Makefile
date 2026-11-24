@@ -12,7 +12,7 @@ help:
 	  'make github-auth                   Sign in to GitHub in the sandbox' \
 	  'make auth                          Sign in to ChatGPT for Docker Sandboxes' \
 	  'make network                       Preview NETWORK_ALLOW rules (APPLY=1 adds them)' \
-	  'make link-setup                    Link the sandbox to T3 Code on this Mac (LINK_ACCESS=auto by default)' \
+	  'make link-setup                    Link the sandbox to T3 Code on this Mac (new links use LINK_ACCESS=auto)' \
 	  'make link-stop                     Remove the link and the SSH forward' \
 	  'make mcp-setup MCP_HOSTNAME=...     Optional: expose MCP publicly via Cloudflare Tunnel (macOS)' \
 	  'make mcp-pair                      Issue a short-lived code (MCP_ACCESS=read-only by default)' \

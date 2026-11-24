@@ -127,6 +127,11 @@ if [ "$with_nix" = 1 ]; then
     fi
     export NIX_CONFIG="${NIX_CONFIG:+$NIX_CONFIG
 }extra-experimental-features = nix-command flakes"
+    # A fresh /nix volume is empty. Without /nix/store, single-user Nix keeps its store under
+    # ~/.local/share/nix on the root disk instead.
+    if [ -d /nix ] && [ -w /nix ] && [ ! -e /nix/store ]; then
+        mkdir -p /nix/store /nix/var/nix
+    fi
 fi
 
 if [ -f install.sh ]; then

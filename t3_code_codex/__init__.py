@@ -28,6 +28,7 @@ def main() -> int:
         "--codex-kit",
         help="Codex kit to create the sandbox from, such as docker.io/sbx/codex:0.171.0 (default: codex, the latest).",
     )
+    parser.add_argument("--nix-volume", help="Give /nix its own disk of this size, such as 30g.")
     github = parser.add_mutually_exclusive_group()
     github.add_argument(
         "--github-auth", action="store_true", dest="github_auth", default=None,
@@ -45,7 +46,7 @@ def main() -> int:
     parser.add_argument(
         "--link-access",
         choices=("read-only", "approval-required", "auto-accept-edits", "auto", "full-access"),
-        help="With link-setup, the most agents on this Mac may do in the sandbox (default: auto).",
+        help="With link-setup, the most agents on this Mac may do in the sandbox (default: keep the current link, or auto).",
     )
     parser.add_argument(
         "--mcp-access",
@@ -65,8 +66,8 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if args.action != "setup" and (args.workspace or args.t3_version or args.codex_kit):
-        parser.error("--workspace, --t3-version and --codex-kit require setup.")
+    if args.action != "setup" and (args.workspace or args.t3_version or args.codex_kit or args.nix_volume):
+        parser.error("--workspace, --t3-version, --codex-kit and --nix-volume require setup.")
     if args.action not in ("setup", "resume") and (args.repo is not None or args.github_auth is not None):
         parser.error("--repo and GitHub authentication options require setup or resume.")
     if args.details and args.action != "status":
@@ -94,6 +95,7 @@ def main() -> int:
         "WORKSPACE": str(args.workspace.expanduser().resolve()) if args.workspace is not None else None,
         "T3_VERSION": args.t3_version,
         "CODEX_KIT": args.codex_kit,
+        "NIX_VOLUME": args.nix_volume,
         "GITHUB_AUTH": args.github_auth,
         "DETAILS": "1" if args.details else None,
         "DOTFILES": args.dotfiles,

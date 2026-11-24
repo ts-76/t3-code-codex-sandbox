@@ -26,6 +26,9 @@ if [ -f "$state" ]; then
 else
     printf "%s\n" "Dotfiles last apply: no record"
 fi
+if [ -d /nix ]; then
+    df -h /nix | awk 'NR == 2 { printf "Nix storage: %s used of %s (%s)\n", $3, $2, $5 }'
+fi
 if [ -f "${XDG_DATA_HOME:-$HOME/.local/share}/devbox/global/default/devbox.json" ]; then
     printf "%s\n" "Devbox configuration: present"
     tool_version devbox "Devbox CLI" version

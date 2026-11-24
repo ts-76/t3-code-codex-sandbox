@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
+from datetime import datetime
 import fcntl
 import hashlib
 import json
@@ -136,6 +137,13 @@ def tunnel_id(cloudflared: str, sandbox: str, hostname: str) -> str:
     return created
 
 
+def parse_time(value) -> datetime | None:
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (AttributeError, ValueError):
+        return None
+
+
 def get_json(url: str) -> dict:
     body = run("/usr/bin/curl", "-q", "--noproxy", "*", "-fs", "--max-time", "3", url, capture=True)
     result = json.loads(body)
@@ -169,6 +177,7 @@ class Services:
         self.domain = f"gui/{os.getuid()}"
         self.record = self.state / "setup.json"
         self.forward_record = self.state / "forward.json"
+        self.link_record = self.state / "link.json"
         self.config = self.state / "cloudflared.yml"
 
     @contextmanager
@@ -339,22 +348,102 @@ class Services:
             )
         ]
 
-    def link_setup(self, port_value: str, access: str):
-        if access not in ACCESS_MODES:
+    def link_sessions(self) -> dict[str, dict]:
+        sessions = json.loads(run(
+            "sbx", "exec", self.sandbox, "--", "sh", "-c",
+            'exec t3 auth session list --base-dir "$HOME/.t3" --json', capture=True,
+        ) or "[]")
+        return {
+            session["sessionId"]: session for session in sessions
+            if isinstance(session, dict) and session.get("subject") == "mcp-client" and session.get("sessionId")
+        }
+
+    def matching_link_sessions(self, link: dict) -> list[str]:
+        # The link's session in the sandbox is issued while the Mac redeems the pairing code.
+        linked_at = parse_time(link.get("linkedAt"))
+        if linked_at is None:
+            raise ValueError("The link has no creation time.")
+        return [
+            session_id for session_id, session in self.link_sessions().items()
+            if (issued := parse_time(session.get("issuedAt"))) and abs((issued - linked_at).total_seconds()) < 60
+        ]
+
+    def remember_link_session(self, link: dict, matches: list[str] | None = None) -> bool:
+        try:
+            matches = self.matching_link_sessions(link) if matches is None else matches
+        except (subprocess.SubprocessError, ValueError):
+            return False
+        if len(matches) != 1:
+            return False
+        private_write(self.link_record, json.dumps(
+            {"environmentId": link.get("environmentId"), "session": matches[0]}, indent=2,
+        ).encode() + b"\n")
+        return True
+
+    def link_session_alive(self, link: dict) -> bool | None:
+        """Whether the link still has its session in the sandbox; None when that cannot be told."""
+        try:
+            record = json.loads(self.link_record.read_text())
+            if not isinstance(record, dict):
+                record = None
+        except FileNotFoundError:
+            record = None
+        except ValueError:
+            record = None
+        try:
+            if record is not None:
+                return record.get("session") in self.link_sessions()
+            # Links made before the kit recorded sessions are matched by creation time.
+            matches = self.matching_link_sessions(link)
+        except (subprocess.SubprocessError, ValueError):
+            return None
+        if not matches:
+            return False
+        return True if self.remember_link_session(link, matches) else None
+
+    def revoke_link_session(self) -> bool:
+        """Revoke the recorded session of the previous link. False means none was recorded."""
+        try:
+            record = json.loads(self.link_record.read_text())
+        except FileNotFoundError:
+            return False
+        except ValueError:
+            record = None
+        session = record.get("session") if isinstance(record, dict) else None
+        try:
+            if session and session in self.link_sessions():
+                run(
+                    "sbx", "exec", self.sandbox, "--", "sh", "-c",
+                    'exec t3 auth session revoke --base-dir "$HOME/.t3" "$1"', "sh", session, quiet=True,
+                )
+                print(f"Link: revoked the previous link's session in {self.sandbox}.", flush=True)
+        except (subprocess.SubprocessError, ValueError):
+            return False
+        self.link_record.unlink()
+        return True
+
+    def link_setup(self, port_value: str, access: str = ""):
+        if access and access not in ACCESS_MODES:
             raise ValueError(f"Set LINK_ACCESS to one of: {', '.join(sorted(ACCESS_MODES))}.")
         cli = t3_cli()
         forward, sandbox_id = self.ensure_forward(port_value)
         existing = self.linked(cli, environment_id=sandbox_id)
-        if any(
-            forward.local_url in (link.get("urls") or []) and link.get("access") == access
-            and link.get("status") == "reachable" for link in existing
-        ):
-            print(f"\nSandbox: {self.sandbox}\nLinked environment: {forward.local_url} ({access}, reachable)")
-            return
+        current = next((link for link in existing if forward.local_url in (link.get("urls") or [])), None)
+        if not access:
+            # Rerunning without LINK_ACCESS repairs the link without changing what it allows.
+            access = current.get("access") if current and current.get("access") in ACCESS_MODES else "auto"
+        if current and current.get("access") == access and current.get("status") == "reachable":
+            if self.link_session_alive(current) is not False:
+                print(f"\nSandbox: {self.sandbox}\nLinked environment: {forward.local_url} ({access}, reachable)")
+                return
+            # Reachability only proves the sandbox answers; a revoked session leaves the link unusable.
+            print("Link: its session in the sandbox is gone. Linking again.", flush=True)
         for link in existing:
             # A link to the same sandbox at another address, such as a desktop-managed SSH port, goes stale.
             print(f"Link: replacing the link at {', '.join(link.get('urls') or [])}", flush=True)
             run(cli, "environment", "unlink", sandbox_id, quiet=True)
+        if not self.revoke_link_session() and existing:
+            print(f"Link: revoke the previous link's session in {self.sandbox} under Settings → Sharing & access.", flush=True)
         issued = json.loads(run(
             "sbx", "exec", self.sandbox, "--", "sh", "-c",
             'exec t3 auth pairing create --base-dir "$HOME/.t3" "$@"',
@@ -364,10 +453,15 @@ class Services:
         if not credential:
             raise ValueError("The sandbox did not issue a pairing code.")
         run(cli, "environment", "link", forward.local_url, "--pairing-code", credential, "--access", access)
-        wait_for(
-            lambda: any(link.get("status") == "reachable" for link in self.linked(cli, environment_id=sandbox_id)),
+        link = wait_for(
+            lambda: next(
+                (link for link in self.linked(cli, environment_id=sandbox_id) if link.get("status") == "reachable"),
+                None,
+            ),
             "The link was created but the sandbox is not reachable from T3 Code yet. Run status with details.",
         )
+        if not self.remember_link_session(link):
+            print(f"Link: could not identify its session in {self.sandbox}. Revoke it there when you remove the link.")
         print(f"\nSandbox: {self.sandbox}\nLinked environment: {forward.local_url} ({access}, reachable)")
         print("Agents on this Mac, and outside agents that reach it through T3 Connect, can now work in the sandbox.")
 
@@ -386,9 +480,12 @@ class Services:
             for link in self.linked(cli, url=forward.local_url) if cli else []:
                 run(cli, "environment", "unlink", link["environmentId"], quiet=True)
                 print(f"Link: removed {link.get('label') or link['environmentId']} from T3 Code on this Mac.")
+        revoked = self.revoke_link_session()
         self.stop_agent("ssh")
         self.forward_record.unlink(missing_ok=True)
-        print(f"Forward stopped for {self.sandbox}. Revoke the link's session in the sandbox under Settings → Sharing & access.")
+        print(f"Forward stopped for {self.sandbox}.")
+        if not revoked:
+            print("Revoke the link's session in the sandbox under Settings → Sharing & access.")
 
     def setup(self, hostname: str, port_value: str):
         route = self.route()
@@ -494,7 +591,7 @@ def main() -> int:
         service = Services(sandbox)
         with service.locked():
             if action == "link-setup":
-                service.link_setup(settings[1], settings[3] if len(settings) > 3 else "auto")
+                service.link_setup(settings[1], settings[3] if len(settings) > 3 else "")
             elif action == "link-stop":
                 service.link_stop()
             elif action == "mcp-setup":

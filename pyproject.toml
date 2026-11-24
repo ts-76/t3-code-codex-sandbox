@@ -18,3 +18,4 @@ packages = ["t3_code_codex"]
 [tool.hatch.build.targets.wheel.force-include]
 "scripts" = "t3_code_codex/scripts"
 "t3code-ssh" = "t3_code_codex/t3code-ssh"
+"nix-volume" = "t3_code_codex/nix-volume"

@@ -91,11 +91,11 @@ uvx --from git+https://github.com/ts-76/t3-code-codex-sandbox.git \
   t3-code-codex-setup link-setup --name t3-code-codex
 ```
 
-`link-setup` forwards a fixed loopback port on your Mac (`13773` by default) to T3 Code in the sandbox over SSH. A LaunchAgent keeps the forward running while you are logged in, and the SSH session starts T3 Code inside the sandbox if its server stops. The command then links the sandbox to T3 Code on your Mac at that address with a five-minute pairing code. A link to the same sandbox at another address is replaced. The port the desktop app opens for its own SSH connection changes when the app restarts, so a link to it stops answering. Rerunning the command leaves a working link as it is.
+`link-setup` forwards a fixed loopback port on your Mac (`13773` by default) to T3 Code in the sandbox over SSH. A LaunchAgent keeps the forward running while you are logged in, and the SSH session starts T3 Code inside the sandbox if its server stops. The command then links the sandbox to T3 Code on your Mac at that address with a five-minute pairing code. A link to the same sandbox at another address is replaced. The port the desktop app opens for its own SSH connection changes when the app restarts, so a link to it stops answering. Rerunning the command leaves a working link as it is. When the command replaces a link it created, it also revokes the old link's session in the sandbox.
 
-`LINK_ACCESS` (`--link-access`) sets the most that agents from your Mac may do in the sandbox. The default is `auto`. An agent never gets more in the sandbox than its own mode on your Mac. Set a distinct `MCP_LOCAL_PORT` (`--mcp-local-port`) if `13773` is busy or if you link multiple sandboxes.
+`LINK_ACCESS` (`--link-access`) sets the most that agents from your Mac may do in the sandbox. Without it, rerunning keeps the current link's access, and a new link uses `auto`. To change the access, specify it again, for example `--link-access full-access`. An agent never gets more in the sandbox than its own mode on your Mac. Set a distinct `MCP_LOCAL_PORT` (`--mcp-local-port`) if `13773` is busy or if you link multiple sandboxes.
 
-Run `make link-stop NAME=t3-code-codex` (or `link-stop --name t3-code-codex` with `uvx`) to remove the link and stop the SSH forward. Then revoke the link's session in the sandbox under **Settings → Sharing & access**. If you set up the public endpoint below, run `mcp-stop` first.
+Run `make link-stop NAME=t3-code-codex` (or `link-stop --name t3-code-codex` with `uvx`) to remove the link, revoke its session in the sandbox, and stop the SSH forward. For a link made by an earlier version of the kit, revoke the session yourself in the sandbox under **Settings → Sharing & access**. If you set up the public endpoint below, run `mcp-stop` first.
 
 ## Optional: expose the sandbox's MCP endpoint publicly
 
@@ -166,6 +166,7 @@ Dotfiles are checked out to `~/dotfiles` inside the sandbox. If the repository r
 
 - Add `--dotfiles-nix` for templates that need Nix. The `ts-76/dotfiles` repository needs it to generate its Devbox configuration.
 - Add `--run-dotfiles-scripts` to run chezmoi installation scripts. Installing Devbox packages requires Devbox, Nix, and network access to the distribution hosts from inside the sandbox. Check connection failures with `sbx policy log t3-code-codex --limit 20`. [Docker network troubleshooting](https://docs.docker.com/ai/governance/troubleshooting/)
+- A sandbox's root disk is 20 GB, and a Devbox package set can fill it. When you create the sandbox, add `--nix-volume 30g` (`NIX_VOLUME=30g`) to give `/nix` its own disk of that size. It takes space on your Mac's disk, so keep enough free space there. The volume is removed with the sandbox in `sbx` v0.51.0, so re-creating the sandbox downloads the packages again. `status --details` shows how much of it is in use. [Docker's volume capability](https://github.com/docker/sandbox-kit-spec/blob/main/docs/spec/capabilities/com.docker.sandbox/volume%401.md)
 
 ## Update the kit or sandbox configuration
 
@@ -209,6 +210,7 @@ Docker also publishes a T3 Code kit, but as of November 2026 it does not replace
 | --- | --- |
 | `sandbox.conf.example` | Personal settings template |
 | `t3code-ssh/` | Docker Sandboxes kit definition |
+| `nix-volume/` | Optional kit that gives `/nix` its own disk |
 | `scripts/host/` | Host-side setup, recovery, configuration, network rules, and diagnostics |
 | `scripts/sandbox/` | Repository checkout, dotfiles, and diagnostics inside the sandbox |
 | `t3_code_codex/` | Python entry point for `uvx` |
@@ -216,6 +218,7 @@ Docker also publishes a T3 Code kit, but as of November 2026 it does not replace
 
 ```sh
 sbx kit validate ./t3code-ssh
+sbx kit validate ./nix-volume
 python3 -B -m unittest discover -s tests
 ```
 
