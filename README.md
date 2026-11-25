@@ -204,6 +204,8 @@ Run `make help` for setup options. Use `REPO=owner/repo` to clone a repository o
 
 [`t3code-ssh.yaml`](t3code-ssh/t3code-ssh.yaml) downloads the official T3 Code Linux archive, verifies its SHA-256 checksum, and installs it in the sandbox. The kit is built locally from source.
 
+When the sandbox is created, the kit also uses apt to install the Linux libraries and fonts that T3's built-in browser preview needs to start Chromium, such as `libnss3`, `libX11`, `libgbm` and Noto CJK. Without them, the preview fails inside the sandbox. To skip them, change the `preview` argument's default to `"false"` in the kit file.
+
 Docker also publishes a T3 Code kit, but as of November 2026 it does not replace `t3code-ssh`. `docker.io/sbx/t3code-kit` uses the v2 format, which `sbx` refuses to combine with the v3 `codex` kit. The v3 `docker.io/sbx/t3code` installs `t3` 0.0.45, which is fixed when Docker builds the kit and does not match the desktop app. It also installs `libatomic1` with apt when the sandbox is created. The archive that `t3code-ssh` installs includes that library. [Docker's T3 Code kit](https://github.com/docker/sbx-kits-contrib/tree/v3/t3code)
 
 | Path | Contents |

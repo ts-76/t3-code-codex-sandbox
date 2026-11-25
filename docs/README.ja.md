@@ -204,6 +204,8 @@ make -C ./t3-code-codex-sandbox setup
 
 [t3code-ssh.yaml](../t3code-ssh/t3code-ssh.yaml) は T3 Code の公式 Linux アーカイブをダウンロードし、SHA-256 を照合して組み込みます。配布時はソースからローカルでビルドします。
 
+サンドボックスの作成時には、T3 の内蔵ブラウザプレビューがサンドボックス内で Chromium を起動するのに必要な Linux ライブラリとフォントも apt で入れます（`libnss3`、`libX11`、`libgbm`、Noto CJK など）。これがないと、サンドボックス内でプレビューが起動しません。入れない場合は、キットファイルの引数 `preview` の既定値を `"false"` に変えてください。
+
 Docker も T3 Code 用のキットを公開していますが、2026年11月時点では `t3code-ssh` の代わりになりません。`docker.io/sbx/t3code-kit` は v2 形式のため、`sbx` が v3 の `codex` キットとの組み合わせを拒否します。v3 形式の `docker.io/sbx/t3code` が入れる `t3` は 0.0.45 で、この版は Docker がキットを作った時点で決まっており、デスクトップアプリと合いません。また、サンドボックスの作成時に apt で `libatomic1` を入れます。`t3code-ssh` が入れるアーカイブには、このライブラリが同梱されています。[Docker の T3 Code キット](https://github.com/docker/sbx-kits-contrib/tree/v3/t3code)
 
 | パス | 内容 |
